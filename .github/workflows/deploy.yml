@@ -1,55 +1,128 @@
-name: Publicar demonstracao na Locaweb
+name: B02 - Auditoria e teste seguro Locaweb
 on:
   push:
     branches: [main]
     paths:
-      - 'web/index.html'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
+    inputs:
+      publish_probe:
+        description: 'Autorizar teste temporario SFTP (sem publicar a aplicacao)'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: rede-pastoral-locaweb
+  group: rede-pastoral-b02
   cancel-in-progress: false
 jobs:
-  deploy:
+  preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 4
+    env:
+      FTP_HOST: ${{ secrets.HOST }}
+      FTP_USER: ${{ secrets.USER }}
+      FTP_PASSWORD: ${{ secrets.PASS }}
+      TRUSTED_HOSTS: ${{ secrets.LOCAWEB_KNOWN_HOSTS }}
+      PRIVATE_REPO: ${{ github.event.repository.private }}
+      SITE_URL: https://redepastoraldosurdo.compassrosesystems.com.br/
     steps:
-      - name: Obter codigo
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Validar pagina de demonstracao
-        run: |
-          test -s web/index.html
-          grep -q 'v0.1-demo' web/index.html
-          grep -q 'Não cadastrar dados reais' web/index.html
-      - name: Instalar cliente FTPS
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
-      - name: Publicar apenas a pagina de demonstracao
-        env:
-          FTP_HOST: ${{ secrets.HOST }}
-          FTP_USER: ${{ secrets.USER }}
-          FTP_PASSWORD: ${{ secrets.PASS }}
+      - name: Conferir configuracao sem revelar segredos
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$FTP_HOST" && test -n "$FTP_USER" && test -n "$FTP_PASSWORD"
-          lftp -u "$FTP_USER","$FTP_PASSWORD" -p 21 "$FTP_HOST" <<'EOF'
-          set cmd:fail-exit yes
-          set ftp:ssl-allow true
-          set ftp:ssl-force true
-          set ftp:ssl-protect-data true
-          set ssl:verify-certificate true
-          set net:timeout 20
-          set net:max-retries 2
-          cd public_html/redepastoraldosurdo
-          put web/index.html -o index.html
-          bye
-          EOF
-      - name: Verificar pagina HTTPS
+          echo "Repositorio privado: $PRIVATE_REPO"
+          if [[ -n "$FTP_HOST" && -n "$FTP_USER" && -n "$FTP_PASSWORD" ]]; then
+            echo "Secrets HOST, USER, PASS: presentes"
+          else
+            echo "Secrets HOST, USER, PASS: incompletos"
+          fi
+          if [[ -n "$TRUSTED_HOSTS" ]]; then
+            echo "Chave de servidor confiavel: configurada (validacao na conexao)"
+          else
+            echo "Chave de servidor confiavel: pendente"
+          fi
+          if [[ "$FTP_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
+            if timeout 8 bash -c 'exec 3<>"/dev/tcp/$1/22"' _ "$FTP_HOST" 2>/dev/null; then
+              echo "TCP/22 do host configurado: acessivel; identidade e SFTP ainda nao verificados"
+            else
+              echo "TCP/22 do host configurado: indisponivel ou nao confirmado"
+            fi
+          else
+            echo "Host ausente ou formato incompatível"
+          fi
+          if code=$(curl --silent --show-error --proto '=https' --connect-timeout 10 --max-time 20 --output /dev/null --write-out '%{http_code}' "$SITE_URL" 2>/dev/null); then
+            echo "HTTPS com certificado validado: HTTP $code (nao comprova publicacao)"
+          else
+            echo "HTTPS: nao comprovado"
+          fi
+          echo "Preflight sem autenticacao remota, upload ou modificacao no servidor."
+  probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_probe == true && github.event.repository.private == true
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      FTP_HOST: ${{ secrets.HOST }}
+      FTP_USER: ${{ secrets.USER }}
+      SSHPASS: ${{ secrets.PASS }}
+      TRUSTED_HOSTS: ${{ secrets.LOCAWEB_KNOWN_HOSTS }}
+      SITE_URL: https://redepastoraldosurdo.compassrosesystems.com.br/
+    steps:
+      - name: Preparar cliente SFTP
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+      - name: Testar arquivo temporario, HTTPS e reversao
+        shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location --retry 3 --retry-delay 5 --max-time 25 https://redepastoraldosurdo.compassrosesystems.com.br/ -o /tmp/rede-pastoral.html
-          grep -q 'v0.1-demo' /tmp/rede-pastoral.html
+          umask 077
+          [[ "$FTP_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]]
+          [[ "$FTP_USER" =~ ^[A-Za-z0-9._@-]+$ ]]
+          [[ -n "$SSHPASS" && -n "$TRUSTED_HOSTS" ]]
+          tmp=$(mktemp -d)
+          printf '%s\n' "$TRUSTED_HOSTS" > "$tmp/known_hosts"
+          ssh-keygen -F "$FTP_HOST" -f "$tmp/known_hosts" >/dev/null || { echo "::error::Chave confiavel nao corresponde ao host configurado"; rm -rf "$tmp"; exit 1; }
+          dir="b02-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(openssl rand -hex 8)"
+          base="public_html/redepastoraldosurdo"
+          printf 'Rede Pastoral do Surdo B02 %s\n' "$dir" > "$tmp/probe.txt"
+          sftp_cmd() {
+            sshpass -e sftp -q -P 22 -oBatchMode=no -oStrictHostKeyChecking=yes \
+              -oUserKnownHostsFile="$tmp/known_hosts" -oGlobalKnownHostsFile=/dev/null \
+              -oUpdateHostKeys=no -oConnectTimeout=12 -oNumberOfPasswordPrompts=1 \
+              -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive \
+              -b - "$FTP_USER@$FTP_HOST" >"$tmp/sftp.log" 2>&1
+          }
+          created=0
+          cleanup() {
+            if [[ "$created" == 1 ]]; then
+              if ! printf 'cd %s/%s\n-rm probe.txt\ncd ..\nrmdir %s\n' "$base" "$dir" "$dir" | sftp_cmd; then
+                echo "::error::Reversao nao comprovada; remover somente $dir pelo painel"
+                return 1
+              fi
+              created=0
+              echo "Reversao SFTP: diretorio temporario removido"
+            fi
+          }
+          finish() {
+            rc=$?
+            cleanup || rc=1
+            rm -rf "$tmp"
+            exit "$rc"
+          }
+          trap finish EXIT
+          # mkdir sem prefixo '-' falha se o diretorio ja existir; nenhum arquivo alheio e substituido.
+          if ! printf 'cd %s\nmkdir %s\n' "$base" "$dir" | sftp_cmd; then
+            echo "::error::SFTP autenticado ou diretorio exclusivo nao confirmado; sem upload"
+            exit 1
+          fi
+          created=1
+          echo "SFTP autenticado com chave previamente confiavel; diretorio exclusivo confirmado"
+          printf 'cd %s/%s\nput %s/probe.txt probe.txt\n' "$base" "$dir" "$tmp" | sftp_cmd
+          curl --fail --silent --show-error --proto '=https' --connect-timeout 10 --max-time 25 "${SITE_URL}${dir}/probe.txt" -o "$tmp/response.txt"
+          cmp "$tmp/probe.txt" "$tmp/response.txt"
+          echo "Publicacao HTTPS: marcador identico confirmado"
+          cleanup
+          code=$(curl --silent --show-error --proto '=https' --max-time 20 --output "$tmp/after.txt" --write-out '%{http_code}' "${SITE_URL}${dir}/probe.txt")
+          [[ "$code" == 404 || "$code" == 410 ]] || { echo "::error::Remocao HTTP nao comprovada: $code"; exit 1; }
+          echo "Reversao HTTPS: HTTP $code"
+          echo "Teste de transporte aprovado; PHP, banco e cron requerem auditoria independente."

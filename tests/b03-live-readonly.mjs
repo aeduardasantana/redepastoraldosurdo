@@ -10,3 +10,7 @@ for(const table of ["b03_test_profiles","b03_test_notes"]){
   console.log("Data API: "+table+" acesso anônimo bloqueado HTTP "+res.status);
 }
 console.log("Teste externo sem cadastro, autenticação positiva ou escrita.");
+
+const invalid=await fetch(projectUrl+"/auth/v1/token?grant_type=password",{method:"POST",headers:{...headers,"Content-Type":"application/json"},body:JSON.stringify({email:"b03-inexistente@example.invalid",password:"invalid-test-only-credential"}),signal:AbortSignal.timeout(15000)});
+assert.ok([400,401,422].includes(invalid.status),"Login inválido não recusado: "+invalid.status);
+console.log("Auth: tentativa de login com conta inexistente recusada HTTP "+invalid.status);

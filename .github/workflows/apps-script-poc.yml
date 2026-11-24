@@ -1,0 +1,23 @@
+name: B03 - POC Apps Script sem publicar
+on:
+  push:
+    branches: [b03-apps-script-poc]
+    paths:
+      - 'apps-script/**'
+      - 'tests/apps-script-poc.test.mjs'
+      - '.github/workflows/apps-script-poc.yml'
+permissions:
+  contents: read
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Testar autorizacao territorial
+        run: node --test tests/apps-script-poc.test.mjs
+      - name: Validar manifesto e HTML
+        run: |
+          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('apps-script/appsscript.json'));if(m.runtimeVersion!=='V8')process.exit(1)"
+          test -s apps-script/Index.html
+          echo "POC validada estaticamente; nenhuma implantacao executada."

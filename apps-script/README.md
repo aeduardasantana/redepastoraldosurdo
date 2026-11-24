@@ -1,0 +1,13 @@
+# POC Apps Script — B03
+Prova de conceito, somente leitura, dados fictícios. Arquitetura ainda não homologada; preservar main e b03-desenvolvimento e Supabase existente.
+
+## Ativação manual mínima (sem instalação)
+1. Abra a planilha POC privada na pasta do projeto no Drive. Extensões > Apps Script.
+2. Cole Code.gs, adicione um arquivo HTML chamado Index e cole Index.html. Se necessário, em Configurações do projeto, exiba appsscript.json e copie o manifesto. Nenhum ID da planilha precisa ser registrado no GitHub.
+3. No editor, execute configurarPoc_ uma vez e autorize. O ID da planilha vinculada fica nas propriedades do script.
+4. Implantar > Nova implantação > Aplicativo da Web. Executar como o proprietário. Para primeiro teste, acesso somente a você; nunca selecionar acesso anônimo. Depois, somente em teste fictício, escolher acesso a usuários com Conta Google se disponível e aprovado, sem compartilhar a planilha.
+5. Em ACESSOS, substitua apenas duas identidades example.invalid por e-mails de contas Google de teste sob controle da responsável, com as unidades fictícias D-A e D-B. Não publicar esses e-mails no GitHub. Abra a URL de teste em sessões separadas. Confirmar identificação externa, negativa para conta não cadastrada, isolamento Alfa/Beta e revogação. Voltar a acesso restrito após teste.
+6. Se Session.getActiveUser().getEmail() retornar vazio, o app nega acesso. Não aceitar e-mail digitado, não usar getEffectiveUser para identificar visitante, não compartilhar planilhas com usuários finais. Avaliar autenticação federada verificada no servidor ou preservar Supabase Auth; não improvisar senha própria.
+
+## Limites
+Somente leitura, sem cadastro/alteração/exclusão ou acesso a dados reais. Sem domínio, Locaweb, alteração DNS, pagamento, banco Supabase novo ou remoção do existente. Não afirmar implantação feita. API Apps Script exige OAuth apropriado (https://developers.google.com/apps-script/api/how-tos/enable); a conexão atual não oferece operações de criação/implantação do script. A prova de identidade externa exige implantação e teste controlado. Testes Node verificam apenas autorização sobre fixtures, não o runtime Google.

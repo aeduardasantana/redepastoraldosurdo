@@ -33,3 +33,37 @@ function consultarTerritorio(){
    return {ok:true,data};
  }catch(e){return {ok:false,reason:"Não foi possível consultar o cadastro institucional. Verifique a fonte e a autorização."};}
 }
+
+const SOLICITACAO_HEADERS_=["ID_SOLICITACAO","DATA_UTC","TIPO","ID_SUPERIOR","NOME","MUNICIPIO","UF","BAIRRO","ENDERECO","CEP","FONTE","SITUACAO"];
+function normalizarChave_(s){return String(s??"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();}
+function validarSolicitacao_(input,data){
+ const clean=(s,max,required=false)=>{if(typeof s!=="string")throw Error("Campo inválido.");const v=s.trim();if((required&&!v)||v.length>max||/^[=+\-@]|[\u0000-\u001f\u007f]/.test(v))throw Error("Preencha os campos institucionais sem fórmulas.");return v;};
+ if(!input||typeof input!=="object")throw Error("Solicitação inválida.");
+ const tipo=clean(input.tipo,30,true),superior=clean(input.superior,80,true),nome=clean(input.nome,180,true),cidade=clean(input.cidade,100,true),uf=clean(input.uf,2,true),bairro=clean(input.bairro,120),endereco=clean(input.endereco,300),cep=clean(input.cep,9),fonte=clean(input.fonte,500,true);
+ if(!["PAROQUIA","QUASE_PAROQUIA","SANTUARIO","COMUNIDADE","CAPELA","NUCLEO"].includes(tipo)||!["GO","DF"].includes(uf)||cep&&!/^\d{5}-?\d{3}$/.test(cep))throw Error("Tipo, UF ou CEP inválido.");
+ const local=["COMUNIDADE","CAPELA","NUCLEO"].includes(tipo),parents=local?data.paroquias:data.dioceses;
+ if(!parents.some(x=>x.id===superior))throw Error("Selecione a unidade superior válida.");
+ const candidates=local?data.comunidades.filter(x=>x.paroquia===superior):data.paroquias.filter(x=>x.diocese===superior);
+ const same=(x)=>normalizarChave_(x.nome)===normalizarChave_(nome)&&(!x.cidade||normalizarChave_(x.cidade)===normalizarChave_(cidade));
+ if(candidates.some(same))throw Error("Já existe unidade com este nome no território. Consulte o diretório.");
+ return {tipo,superior,nome,cidade,uf,bairro,endereco,cep,fonte};
+}
+function solicitarUnidade(input){
+ try{
+  // O mesmo controle de identidade precede qualquer leitura ou escrita.
+  const data=consultarTerritorio();if(!data.ok)return data;
+  let v;try{v=validarSolicitacao_(input,data.data);}catch(e){return {ok:false,reason:e.message};}
+  const lock=LockService.getScriptLock();if(!lock.tryLock(5000))return {ok:false,reason:"Outra solicitação está sendo processada. Tente novamente."};
+  try{
+   const s=planilha_().getSheetByName("SOLICITACOES_UNIDADES");
+   if(!s||s.getLastRow()>1000||s.getLastRow()<1)throw Error("Fila indisponível.");
+   const rows=s.getRange(1,1,s.getLastRow(),SOLICITACAO_HEADERS_.length).getDisplayValues();
+   if(!SOLICITACAO_HEADERS_.every((h,i)=>rows[0][i]===h))throw Error("Estrutura inválida.");
+   if(rows.slice(1).some(r=>r[11]==="PENDENTE"&&r[3]===v.superior&&normalizarChave_(r[4])===normalizarChave_(v.nome)&&normalizarChave_(r[5])===normalizarChave_(v.cidade)))return {ok:false,reason:"Já existe solicitação pendente para essa unidade."};
+   const id=Utilities.getUuid(),values=[id,new Date().toISOString(),v.tipo,v.superior,v.nome,v.cidade,v.uf,v.bairro,v.endereco,v.cep,v.fonte,"PENDENTE"];
+   const next=s.getLastRow()+1;if(next>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1001-s.getMaxRows()));
+   s.getRange(next,1,1,values.length).setNumberFormat("@").setValues([values]);SpreadsheetApp.flush();
+   return {ok:true,id};
+  }finally{lock.releaseLock();}
+ }catch(e){return {ok:false,reason:"Não foi possível registrar a solicitação. Nenhuma inclusão direta na fonte mestre."};}
+}

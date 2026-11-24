@@ -54,11 +54,20 @@ jobs:
           if code=$(curl --silent --show-error --proto '=https' --connect-timeout 10 --max-time 20 --output /dev/null --write-out '%{http_code}' "$SITE_URL" 2>/dev/null); then
             echo "HTTPS com certificado validado: HTTP $code (nao comprova publicacao)"
           else
-            echo "HTTPS: nao comprovado"
+            rc=$?
+            case "$rc" in
+              6) reason='falha de resolucao DNS' ;;
+              7) reason='falha de conexao TCP' ;;
+              28) reason='tempo limite' ;;
+              35) reason='falha de negociacao TLS' ;;
+              60) reason='certificado nao validado' ;;
+              *) reason='outra falha de transporte' ;;
+            esac
+            echo "HTTPS: nao comprovado; curl=$rc ($reason)"
           fi
           echo "Preflight sem autenticacao remota, upload ou modificacao no servidor."
   probe:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_probe == true && github.event.repository.private == true
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_probe == true && github.ref == 'refs/heads/main' && github.actor == github.repository_owner
     needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -78,7 +87,9 @@ jobs:
           umask 077
           [[ "$FTP_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]]
           [[ "$FTP_USER" =~ ^[A-Za-z0-9._@-]+$ ]]
-          [[ -n "$SSHPASS" && -n "$TRUSTED_HOSTS" ]]
+          [[ -n "$SSHPASS" && -n "$TRUSTED_HOSTS" ]] || { echo '::error::Credenciais ou chave confiavel ausentes; sem conexao autenticada'; exit 1; }
+          # O teste so modifica o servidor se o HTTPS inicial validar o certificado.
+          curl --silent --show-error --proto '=https' --connect-timeout 10 --max-time 20 --output /dev/null "$SITE_URL" || { echo '::error::HTTPS inicial nao validado; sem upload'; exit 1; }
           tmp=$(mktemp -d)
           printf '%s\n' "$TRUSTED_HOSTS" > "$tmp/known_hosts"
           ssh-keygen -F "$FTP_HOST" -f "$tmp/known_hosts" >/dev/null || { echo "::error::Chave confiavel nao corresponde ao host configurado"; rm -rf "$tmp"; exit 1; }
@@ -90,7 +101,7 @@ jobs:
               -oUserKnownHostsFile="$tmp/known_hosts" -oGlobalKnownHostsFile=/dev/null \
               -oUpdateHostKeys=no -oConnectTimeout=12 -oNumberOfPasswordPrompts=1 \
               -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive \
-              -b - "$FTP_USER@$FTP_HOST" >"$tmp/sftp.log" 2>&1
+              -oUser="$FTP_USER" -b - "$FTP_HOST" >"$tmp/sftp.log" 2>&1
           }
           created=0
           cleanup() {

@@ -26,10 +26,10 @@ function consultarTerritorio(){
    if(!cfg||!email||email!==normalizarEmail_(cfg.owner))return {ok:false,reason:"Consulta restrita à conta institucional de teste."};
    const ss=SpreadsheetApp.openById(cfg.sourceId);
    const data=mapTerritorio_(
-     lerTerritorio_(ss,"DIOCESES",["ID","Jurisdição","Província"],21,1000),
-     lerTerritorio_(ss,"PARÓQUIAS",["ID unidade","ID diocese","Jurisdição"],26,1000),
-     lerTerritorio_(ss,"COMUNIDADES",["ID comunidade","ID unidade matriz","ID diocese"],14,1000),
-     lerTerritorio_(ss,"MISSAS LIBRAS",["ID referência","ID diocese (validar)","Cidade / região"],11,1000));
+     lerTerritorio_(ss,"DIOCESES",["ID","Jurisdição","Província","UF","Fonte","Status","Município da cúria","Logradouro e número","Bairro","CEP","Telefone principal","Telefone alternativo","WhatsApp publicado","E-mail principal","E-mail alternativo/pastoral","E-mail comunicação","Observações de validação","Fonte dos contatos","Diretório de paróquias / CDIC","Data de referência","Validação do contato"],21,1000),
+     lerTerritorio_(ss,"PARÓQUIAS",["ID unidade","ID diocese","Jurisdição","Nome no diretório","Tipo","Município","Bairro/localidade","Logradouro e número","CEP","Telefone","WhatsApp","E-mail","Site próprio","Expediente","Clero / função","Fundação","Missas (matriz)","Fonte diretório","Fonte ficha","Consulta","Situação da coleta","Pastoral do Surdo","Pastoral da Criança","Pastoral da Pessoa Idosa","PASCOM","Próximo passo"],26,1000),
+     lerTerritorio_(ss,"COMUNIDADES",["ID comunidade","ID unidade matriz","ID diocese","Nome","Município","Bairro/localidade","Logradouro e número","CEP","Telefone","Missas","Fonte oficial","Data consulta","Situação","Observação"],14,1000),
+     lerTerritorio_(ss,"MISSAS LIBRAS",["ID referência","ID diocese (validar)","Cidade / região","Igreja / comunidade","Endereço público","Dia","Horário informado","Situação na fonte (não garantia atual)","Última referência","Fonte","Validação para visita"],11,1000));
    return {ok:true,data};
  }catch(e){return {ok:false,reason:"Não foi possível consultar o cadastro institucional. Verifique a fonte e a autorização."};}
 }

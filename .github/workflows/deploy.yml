@@ -1,0 +1,55 @@
+name: Publicar demonstracao na Locaweb
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/index.html'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rede-pastoral-locaweb
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Obter codigo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validar pagina de demonstracao
+        run: |
+          test -s web/index.html
+          grep -q 'v0.1-demo' web/index.html
+          grep -q 'Não cadastrar dados reais' web/index.html
+      - name: Instalar cliente FTPS
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+      - name: Publicar apenas a pagina de demonstracao
+        env:
+          FTP_HOST: ${{ secrets.HOST }}
+          FTP_USER: ${{ secrets.USER }}
+          FTP_PASSWORD: ${{ secrets.PASS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$FTP_HOST" && test -n "$FTP_USER" && test -n "$FTP_PASSWORD"
+          lftp -u "$FTP_USER","$FTP_PASSWORD" -p 21 "$FTP_HOST" <<'EOF'
+          set cmd:fail-exit yes
+          set ftp:ssl-allow true
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate true
+          set net:timeout 20
+          set net:max-retries 2
+          cd public_html/redepastoraldosurdo
+          put web/index.html -o index.html
+          bye
+          EOF
+      - name: Verificar pagina HTTPS
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 5 --max-time 25 https://redepastoraldosurdo.compassrosesystems.com.br/ -o /tmp/rede-pastoral.html
+          grep -q 'v0.1-demo' /tmp/rede-pastoral.html

@@ -1,0 +1,28 @@
+name: B03 - Validar fundacao sem publicar
+on:
+  push:
+    branches: [b03-desenvolvimento]
+    paths:
+      - 'web/b03/**'
+      - 'tests/b03-foundation.test.mjs'
+      - '.github/workflows/b03-validate.yml'
+permissions:
+  contents: read
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Conferir sintaxe e testes
+        run: |
+          node --version
+          node --check web/b03/app.mjs
+          node --check web/b03/modules.mjs
+          node --test tests/b03-foundation.test.mjs
+      - name: Preparar saida estavel
+        run: |
+          mkdir -p dist
+          cp web/b03/index.html web/b03/styles.css web/b03/app.mjs web/b03/modules.mjs dist/
+          test -s dist/index.html
+          echo "Build estatico validado; nenhum deploy executado."

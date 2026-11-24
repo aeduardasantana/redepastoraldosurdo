@@ -8,7 +8,12 @@ function configurarPoc_() {
   PropertiesService.getScriptProperties().setProperty("POC_SHEET_ID",ss.getId());
 }
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile("Index").setTitle("Rede Pastoral do Surdo | POC");
+  const html=HtmlService.createHtmlOutputFromFile("Index").getContent();
+  // A imagem original é incorporada apenas no pacote privado de instalação.
+  // Logo.gs (opcional) deve fornecer a função privada regionalLogoDataUri_.
+  const logo=typeof regionalLogoDataUri_==="function"?regionalLogoDataUri_():"";
+  const attr=/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(logo)?'src="'+logo+'"':"hidden";
+  return HtmlService.createHtmlOutput(html.replace("__REGIONAL_LOGO_ATTR__",()=>attr)).setTitle("Rede Pastoral do Surdo | POC");
 }
 function planilha_(){
   const id=PropertiesService.getScriptProperties().getProperty("POC_SHEET_ID");

@@ -13,7 +13,9 @@ function doGet() {
 function planilha_(){
   const id=PropertiesService.getScriptProperties().getProperty("POC_SHEET_ID");
   if(!id)throw new Error("Configuração pendente.");
-  return SpreadsheetApp.openById(id);
+  const ss=SpreadsheetApp.openById(id);
+  if(ss.getSheetByName("LEIA_ME")?.getRange("B2").getDisplayValue()!=="POC FICTÍCIA — não cadastrar pessoas reais") throw new Error("Ambiente não reconhecido.");
+  return ss;
 }
 function tabela_(ss,nome,colunas){
   const tab=ss.getSheetByName(nome);
@@ -28,12 +30,14 @@ function tabela_(ss,nome,colunas){
 function normalizarEmail_(email){return String(email||"").trim().toLowerCase();}
 function dadosPermitidos_(email,units,access,records,date){
   email=normalizarEmail_(email);
-  if(!email || email.endsWith("@example.invalid") && date!=="TEST_ONLY") {
-    // As identidades de fixture só são aceitas no teste unitário com marcador explícito.
-    return {ok:false};
-  }
-  const hoje=date==="TEST_ONLY"?"2026-11-24":date;
-  const validDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(s);
+  if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.endsWith("@example.invalid")) return {ok:false};
+  const hoje=date;
+  const validDate=s=>{
+    if(typeof s!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
+    const d=new Date(s+"T00:00:00Z");
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0,10)===s;
+  };
+  if(!validDate(hoje))return {ok:false};
   const byId=new Map();
   for(const u of units){
     if(!u[0]||byId.has(u[0]))return {ok:false};
@@ -63,9 +67,9 @@ function dadosPermitidos_(email,units,access,records,date){
 }
 function consultarPainel(){
   // Não aceitar e-mail, unidade ou papel do cliente. Identidade sempre obtida do servidor.
-  const email=normalizarEmail_(Session.getActiveUser().getEmail());
-  if(!email)return {ok:false,reason:"Identidade Google não confirmada. Acesso negado."};
   try{
+    const email=normalizarEmail_(Session.getActiveUser().getEmail());
+    if(!email)return {ok:false,reason:"Identidade Google não confirmada. Acesso negado."};
     const ss=planilha_();
     const units=tabela_(ss,"UNIDADES",["ID","PAI_ID","TIPO","NOME","ATIVA"]);
     const access=tabela_(ss,"ACESSOS",["EMAIL","UNIDADE_ID","FUNCAO","ATIVO","INICIO_ISO","FIM_ISO"]);

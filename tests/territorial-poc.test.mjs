@@ -1,0 +1,14 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import vm from "node:vm";
+import {readFile} from "node:fs/promises";
+const context=vm.createContext({});vm.runInContext(await readFile(new URL("../apps-script/Code.gs",import.meta.url),"utf8"),context);vm.runInContext(await readFile(new URL("../apps-script/Territorial.gs",import.meta.url),"utf8"),context);
+const run=(d,p,c,m)=>JSON.parse(JSON.stringify(context.mapTerritorio_(d,p,c,m)));
+const d=[["D01","Arquidiocese Teste","Província Teste","GO"],["D02","Diocese Teste","Província Teste","GO"]];
+const p=[["P01","D01","","Paróquia Teste","Paróquia","Cidade Teste","","Rua Teste","00000-000","","","","","","NOME NÃO EXPORTADO"]];
+const c=[["C01","P01","D01","Comunidade Teste","Cidade Teste","","Rua Teste"]];
+test("mapeia IDs, endereços e jurisdições, não exporta nomes do clero",()=>{const x=run(d,p,c,[]);assert.equal(x.paroquias[0].logradouro,"Rua Teste");assert.equal(x.comunidades[0].paroquia,"P01");assert.ok(!JSON.stringify(x).includes("NOME NÃO EXPORTADO"));});
+test("recusa duplicatas e vínculo incompatível",()=>{assert.throws(()=>run([...d,d[0]],p,c,[]));assert.throws(()=>run(d,p,[["C01","P01","D02","Teste"]],[]));});
+test("celebração sem jurisdição fica pendente",()=>{const x=run(d,p,c,[["M01","", "Cidade","Local"]]);assert.equal(x.missas[0].vinculoPendente,true);assert.equal(x.missas[0].diocese,"");});
+test("diretório real nega antes de ler planilha quando visitante não autorizado",()=>{let reads=0;context.territorialConfig_=()=>({owner:"owner@example.test",sourceId:"test"});context.Session={getActiveUser:()=>({getEmail:()=>"visitor@example.test"})};context.SpreadsheetApp={openById:()=>{reads++;throw Error("não deveria ler")}};assert.equal(context.consultarTerritorio("owner@example.test").ok,false);assert.equal(reads,0);context.Session={getActiveUser:()=>({getEmail:()=>""})};assert.equal(context.consultarTerritorio().ok,false);assert.equal(reads,0);});
+test("HTML preserva marca e consulta no servidor",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");assert.match(h,/GEB Tecnologia/);assert.match(h,/__REGIONAL_LOGO_ATTR__/);assert.match(h,/consultarTerritorio\(\)/);const s=h.match(/<script>([\s\S]*?)<\/script>/)[1];assert.doesNotThrow(()=>new vm.Script(s));});

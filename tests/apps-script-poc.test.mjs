@@ -1,0 +1,17 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import vm from "node:vm";
+import {readFile} from "node:fs/promises";
+const context=vm.createContext({});
+vm.runInContext(await readFile(new URL("../apps-script/Code.gs",import.meta.url),"utf8"),context);
+const units=[["R-TEST","","REGIONAL","Regional","SIM"],["D-A","R-TEST","DIOCESE","Alfa","SIM"],["D-B","R-TEST","DIOCESE","Beta","SIM"],["P-A1","D-A","PAROQUIA","Alfa 1","SIM"],["P-B1","D-B","PAROQUIA","Beta 1","SIM"]];
+const access=[["regional@example.invalid","R-TEST","COORDENACAO","SIM","2026-01-01","2099-12-31"],["alfa@example.invalid","D-A","SECRETARIA","SIM","2026-01-01","2099-12-31"],["beta@example.invalid","D-B","SECRETARIA","SIM","2026-01-01","2099-12-31"],["paroquia@example.invalid","P-A1","AGENTE","SIM","2026-01-01","2099-12-31"],["inativo@example.invalid","R-TEST","COORDENACAO","NAO","2026-01-01","2099-12-31"],["expired@example.invalid","D-A","SECRETARIA","SIM","2020-01-01","2020-12-31"]];
+const records=[["T-A","P-A1","Atividade Alfa","Fictício"],["T-B","P-B1","Atividade Beta","Fictício"],["T-R","R-TEST","Regional","Fictício"]];
+const run=(email,us=units,as=access,date="TEST_ONLY")=>JSON.parse(JSON.stringify(context.dadosPermitidos_(email,us,as,records,date)));
+test("regional vê todas as unidades",()=>assert.equal(run("regional@example.invalid").records.length,3));
+test("dioceses isoladas",()=>{assert.deepEqual(run("alfa@example.invalid").records.map(x=>x.id),["T-A"]);assert.deepEqual(run("beta@example.invalid").records.map(x=>x.id),["T-B"]);});
+test("agente somente sua unidade",()=>assert.deepEqual(run("paroquia@example.invalid").units.map(x=>x.id),["P-A1"]));
+test("identidade ausente, não autorizada, inativa, expirada",()=>{for(const e of ["","no@example.invalid","inativo@example.invalid","expired@example.invalid"])assert.equal(run(e).ok,false);});
+test("fixtures negadas fora da execução unitária",()=>assert.equal(run("regional@example.invalid",units,access,"2026-11-24").ok,false));
+test("unidade inativa, pai inválido e duplicata são negados",()=>{const invalid=units.map(u=>[...u]);invalid[1][4]="NAO";assert.equal(run("alfa@example.invalid",invalid).ok,false);const orphan=units.map(u=>[...u]);orphan[3][1]="D-X";assert.equal(run("paroquia@example.invalid",orphan).ok,false);assert.equal(run("regional@example.invalid",[...units,units[0]]).ok,false);});
+test("conta Google de teste autorizada no servidor",()=>{const a=[["poc@domain.test","D-A","SECRETARIA","SIM","2026-01-01","2099-12-31"]];assert.deepEqual(run("poc@domain.test",units,a,"2026-11-24").records.map(x=>x.id),["T-A"]);});

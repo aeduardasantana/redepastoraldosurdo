@@ -48,6 +48,20 @@ jobs:
             else
               echo "TCP/22 do host configurado: indisponivel ou nao confirmado"
             fi
+            # Negociacao TLS explicita na mesma porta 21 utilizada pelos sistemas existentes.
+            # Nenhuma credencial e enviada ao servidor neste diagnostico.
+            tls_log=$(mktemp)
+            if [[ "$FTP_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              verify_args=(-verify_ip "$FTP_HOST")
+            else
+              verify_args=(-servername "$FTP_HOST" -verify_hostname "$FTP_HOST")
+            fi
+            if timeout 15 openssl s_client -starttls ftp -connect "$FTP_HOST:21" "${verify_args[@]}" -verify_return_error -brief </dev/null >"$tls_log" 2>&1 && grep -q 'Verification: OK' "$tls_log"; then
+              echo "FTPS explicito TCP/21: negociacao TLS e certificado validados; autenticacao e dados ainda nao testados"
+            else
+              echo "FTPS explicito TCP/21: TLS ou certificado nao comprovado; sem autenticacao"
+            fi
+            rm -f "$tls_log"
           else
             echo "Host ausente ou formato incompatível"
           fi
@@ -136,4 +150,4 @@ jobs:
           code=$(curl --silent --show-error --proto '=https' --max-time 20 --output "$tmp/after.txt" --write-out '%{http_code}' "${SITE_URL}${dir}/probe.txt")
           [[ "$code" == 404 || "$code" == 410 ]] || { echo "::error::Remocao HTTP nao comprovada: $code"; exit 1; }
           echo "Reversao HTTPS: HTTP $code"
-          echo "Teste de transporte aprovado; PHP, banco e cron requerem auditoria independente."
+          echo "Teste de transporte aprovado; Supabase e orcamento zero sao validados separadamente."

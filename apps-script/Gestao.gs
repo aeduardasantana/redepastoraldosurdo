@@ -36,7 +36,7 @@ function criarCoordenacaoRascunho(input){
  const ss=SpreadsheetApp.openById(cfg.operacionalId),s=ss.getSheetByName("COORDENACOES");
  const existing=tabela_(ss,"COORDENACOES",COORD_HEADERS_);
  let v;try{v=validarEquipeRascunho_(input,territory.data,existing);}catch(e){return {ok:false,reason:e.message};}
- const id=Utilities.getUuid(),now=new Date().toISOString(),row=s.getLastRow()+1;
+ const id=old?editId:Utilities.getUuid(),now=new Date().toISOString(),row=old?s.getRange(2,1,s.getLastRow()-1,1).getDisplayValues().findIndex(r=>r[0]===editId)+2:s.getLastRow()+1;if(old&&row<2)throw Error("Registro não localizado.");
  if(row>1000)return {ok:false,reason:"Limite da homologação."};
  if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
  s.getRange(row,1,1,COORD_HEADERS_.length).setNumberFormat("@").setValues([[id,v.unidade,v.nome,v.nivel,v.tipo,"RASCUNHO","",v.fonte,"PENDENTE DE VALIDACAO",now,now]]);
@@ -49,19 +49,19 @@ const PESSOAS_HEADERS_=["ID_PESSOA","NOME_COMPLETO","NOME_PREFERIDO","DATA_NASCI
 function validarCadastroBasico_(input,data,hoje){
  const clean=(v,max,required=false)=>{if(typeof v!=="string")throw Error("Campo inválido.");const s=v.trim();if((required&&!s)||s.length>max||/^[=+\-@]|[\u0000-\u001f\u007f]/.test(s))throw Error("Confira os campos de cadastro.");return s;};
  if(!input||typeof input!=="object"||input.autorizado!==true)throw Error("É necessário confirmar autorização institucional e da pessoa para o cadastro.");
- const nome=clean(input.nome,180,true),preferido=clean(input.preferido,100),nascimento=clean(input.nascimento,10,true),cidade=clean(input.cidade,120,true),uf=clean(input.uf,2,true),email=clean(input.email,180),telefone=clean(input.telefone,25),canal=clean(input.canal,20),pais=clean(input.pais,80,true),cep=clean(input.cep,9),bairro=clean(input.bairro,120),logradouro=clean(input.logradouro,250),numero=clean(input.numero,30),complemento=clean(input.complemento,150),unidade=clean(input.unidade,100);
- const d=new Date(nascimento+"T00:00:00Z");
+ const nome=clean(input.nome,180),preferido=clean(input.preferido,100),nascimento=clean(input.nascimento,10),cidade=clean(input.cidade,120),uf=clean(input.uf,2),email=clean(input.email,180),telefone=clean(input.telefone,25),canal=clean(input.canal,20),pais=clean(input.pais,80),cep=clean(input.cep,9),bairro=clean(input.bairro,120),logradouro=clean(input.logradouro,250),numero=clean(input.numero,30),complemento=clean(input.complemento,150),unidade=clean(input.unidade,100);
+ if(nascimento){const d=new Date(nascimento+"T00:00:00Z");
  if(!/^\d{4}-\d{2}-\d{2}$/.test(nascimento)||Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==nascimento||nascimento>hoje||nascimento<"1900-01-01")throw Error("Data de nascimento inválida.");
  let idade=Number(hoje.slice(0,4))-Number(nascimento.slice(0,4));if(hoje.slice(5)<nascimento.slice(5))idade--;
- if(idade<18)throw Error("O fluxo de cadastro de menores ainda não está habilitado.");
- if(pais!=="Brasil"||!["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"].includes(uf))throw Error("Nesta etapa, informe endereço brasileiro e UF válida.");
+ if(idade<18)throw Error("O fluxo de cadastro de menores ainda não está habilitado.");}
+ if((pais&&pais!=="Brasil")||(uf&&!["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"].includes(uf)))throw Error("Informe país ou UF válidos, quando conhecidos.");
  if(cep&&!/^\d{5}-?\d{3}$/.test(cep))throw Error("CEP inválido.");
- if([cep,bairro,logradouro,numero,complemento].some(Boolean)&&![cep,bairro,logradouro,numero].every(Boolean))throw Error("Complete CEP, bairro, logradouro e número (ou s/n), ou deixe o endereço detalhado em branco.");
+
  if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error("E-mail inválido.");
  if(telefone&&!/^[0-9 ()-]{8,25}$/.test(telefone))throw Error("Telefone inválido.");
- if(!["","EMAIL","WHATSAPP","SEM_CONTATO"].includes(canal)||(canal==="EMAIL"&&!email)||(canal==="WHATSAPP"&&!telefone))throw Error("Confira o canal de contato.");
+ if(!["","EMAIL","WHATSAPP","SEM_CONTATO"].includes(canal))throw Error("Confira o canal de contato.");
  if(unidade&&unidade!=="CO"&&![...data.dioceses,...data.paroquias,...data.comunidades,...(data.locais||[]).filter(x=>!x.unidade)].some(x=>x.id===unidade))throw Error("Unidade de vínculo não reconhecida.");
- const cpf=input.cpf==null?"":normalizarCpf_(input.cpf);return {nome,preferido,nascimento,cidade,uf,email,telefone,canal,pais,cep,bairro,logradouro,numero,complemento,unidade,cpf};
+ const cpf=input.cpf==null?"":normalizarCpf_(input.cpf);if(![nome,preferido,email,telefone,cpf].some(Boolean))throw Error("Informe ao menos uma referência de identificação ou contato.");return {nome,preferido,nascimento,cidade,uf,email,telefone,canal,pais,cep,bairro,logradouro,numero,complemento,unidade,cpf};
 }
 function salvarCadastroBasico(input){
  const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
@@ -71,24 +71,24 @@ function salvarCadastroBasico(input){
  lock=LockService.getScriptLock();if(!lock.tryLock(5000))return {ok:false,reason:"Outra operação em andamento. Tente novamente."};
  const ss=SpreadsheetApp.openById(cfg.operacionalId),s=ss.getSheetByName("PESSOAS");
  const rows=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_);
- const token=v.cpf?cpfToken_(v.cpf,rows):"";
- if(token&&rows.some(r=>r[22]===token))return {ok:false,reason:"Possível cadastro existente. Encaminhe para revisão administrativa."};
- if(rows.some(r=>normalizarChave_(r[1])===normalizarChave_(v.nome)&&r[3]===v.nascimento))return {ok:false,reason:"Possível cadastro existente com mesmo nome e nascimento. Solicite revisão antes de cadastrar novamente."};
+ const editId=typeof input.id==="string"?input.id.trim():"";const old=editId?rows.find(r=>r[0]===editId):null;if(editId&&(!old||!["CADASTRADO","PARCIAL"].includes(old[9])))return {ok:false,reason:"Registro indisponível."};if(old&&input.revisao!==old[11])return {ok:false,reason:"O cadastro foi atualizado. Abra novamente a ficha."};const token=v.cpf?cpfToken_(v.cpf,rows):(old?.[22]||"");
+ if(token&&rows.some(r=>r[0]!==editId&&r[22]===token))return {ok:false,reason:"Possível cadastro existente. Encaminhe para revisão administrativa."};
+ if(v.nome&&v.nascimento&&rows.some(r=>r[0]!==editId&&normalizarChave_(r[1])===normalizarChave_(v.nome)&&r[3]===v.nascimento))return {ok:false,reason:"Possível cadastro existente com mesmo nome e nascimento. Solicite revisão antes de cadastrar novamente."};
  const id=Utilities.getUuid(),now=new Date().toISOString(),row=s.getLastRow()+1;
  if(row>1000)return {ok:false,reason:"Limite do cadastro inicial."};
  if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
- const values=[id,v.nome,v.preferido,v.nascimento,v.cidade,v.uf,v.email,v.telefone,v.canal,"CADASTRADO",now,now,v.pais,v.cep,v.bairro,v.logradouro,v.numero,v.complemento,v.unidade,now,"CAD-BASICO-0.11","DECLARACAO_DO_OPERADOR",token];
+ const status=v.nome&&v.nascimento?"CADASTRADO":"PARCIAL";const values=[id,v.nome,v.preferido,v.nascimento,v.cidade,v.uf,v.email,v.telefone,v.canal,status,old?.[10]||now,now,v.pais,v.cep,v.bairro,v.logradouro,v.numero,v.complemento,v.unidade,now,"CAD-BASICO-0.14","DECLARACAO_DO_OPERADOR",token];
  s.getRange(row,1,1,values.length).setNumberFormat("@").setValues([values]);SpreadsheetApp.flush();
- return {ok:true,id};
+ return {ok:true,id,status};
  }catch(e){return {ok:false,reason:"Não foi possível confirmar a gravação. Confira a planilha antes de tentar novamente."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
 }
 function consultarResumoCadastro(){
  try{
  const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
- const ss=SpreadsheetApp.openById(cfg.operacionalId),r=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(x=>x[9]==="CADASTRADO");
+ const ss=SpreadsheetApp.openById(cfg.operacionalId),r=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(x=>["CADASTRADO","PARCIAL"].includes(x[9]));
  const unidades=Object.create(null);for(const x of r){const key=x[18]||"SEM_VINCULO";unidades[key]=(unidades[key]||0)+1;}
  const equipes=tabela_(ss,"COORDENACOES",COORD_HEADERS_).filter(x=>x[5]!=="ARQUIVADA");
- return {ok:true,total:r.length,unidades:Object.entries(unidades).map(([id,total])=>({id,total})),equipes:equipes.length,rascunhos:equipes.filter(x=>x[5]==="RASCUNHO").length};
+ return {ok:true,total:r.length,parciais:r.filter(x=>x[9]==="PARCIAL").length,unidades:Object.entries(unidades).map(([id,total])=>({id,total})),equipes:equipes.length,rascunhos:equipes.filter(x=>x[5]==="RASCUNHO").length};
  }catch(e){return {ok:false,reason:"Indicadores de cadastro indisponíveis."};}
 }
 
@@ -230,6 +230,29 @@ function consultarPessoasPorLocal(){
  try{
  const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
  const ss=SpreadsheetApp.openById(cfg.operacionalId);
- return {ok:true,pessoas:tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(r=>r[9]==="CADASTRADO").map(r=>({id:r[0],nome:r[1],unidade:r[18]}))};
+ return {ok:true,pessoas:tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(r=>["CADASTRADO","PARCIAL"].includes(r[9])).map(r=>({id:r[0],nome:r[1]||r[2]||"Identificação parcial",unidade:r[18],status:r[9]}))};
  }catch(e){return {ok:false,reason:"Consulta indisponível."};}
+}
+
+function consultarFichaPessoa(id){
+ try{const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};const r=tabela_(SpreadsheetApp.openById(cfg.operacionalId),"PESSOAS",PESSOAS_HEADERS_).find(r=>r[0]===id&&["CADASTRADO","PARCIAL"].includes(r[9]));if(!r)return {ok:false,reason:"Ficha indisponível."};
+ return {ok:true,pessoa:{id:r[0],nome:r[1],preferido:r[2],nascimento:r[3],cidade:r[4],uf:r[5],email:r[6],telefone:r[7],canal:r[8],revisao:r[11],pais:r[12],cep:r[13],bairro:r[14],logradouro:r[15],numero:r[16],complemento:r[17],unidade:r[18],cpfRegistrado:!!r[22]}};
+ }catch(e){return {ok:false,reason:"Ficha indisponível."};}
+}
+const CONTATOS_INST_HEADERS_=["ID_CONTATO","ID_UNIDADE","TIPO_CONTATO","SETOR_FUNCAO","NOME_REFERENCIA","TELEFONE","WHATSAPP","EMAIL","FONTE","VALIDACAO","ATUALIZADO_EM"];
+function consultarContatosInstitucionais(){
+ try{const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};return {ok:true,contatos:tabela_(SpreadsheetApp.openById(cfg.operacionalId),"CONTATOS_INSTITUCIONAIS",CONTATOS_INST_HEADERS_).map(r=>({id:r[0],unidade:r[1],tipo:r[2],setor:r[3],nome:r[4],telefone:r[5],whatsapp:r[6],email:r[7],fonte:r[8],validacao:r[9]}))};}catch(e){return {ok:false,reason:"Contatos indisponíveis."};}
+}
+function salvarContatoInstitucional(input){
+ if(!gestaoConfigAutorizada_())return {ok:false,reason:"Acesso negado."};const t=consultarTerritorio();if(!t.ok)return t;
+ return operacaoRede_(ss=>{
+ const v=(k,max)=>textoOperacional_(input?.[k]||"",max,false);
+ const unidade=v("unidade",100),tipo=v("tipo",40),setor=v("setor",120),nome=v("nome",180),telefone=v("telefone",50),whatsapp=v("whatsapp",50),email=v("email",180),fonte=v("fonte",500);
+ if(!unidadeRedeValida_(unidade,t.data)&&!(t.data.locais||[]).some(x=>x.id===unidade))return {ok:false,reason:"Selecione o local de referência."};
+ if(!["CURIA_DIOCESANA","SECRETARIA_PAROQUIAL","PASTORAL_DO_SURDO","OUTRA_PASTORAL","COMUNICACAO","OUTRO"].includes(tipo)||![nome,telefone,whatsapp,email].some(Boolean)||input?.autorizado!==true)return {ok:false,reason:"Informe tipo, pelo menos uma referência de contato e confirme autorização."};
+ if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return {ok:false,reason:"E-mail inválido."};
+ const rows=tabela_(ss,"CONTATOS_INSTITUCIONAIS",CONTATOS_INST_HEADERS_);
+ if(rows.some(r=>r[1]===unidade&&r[2]===tipo&&[setor,nome,telefone,whatsapp,email].every((v,i)=>normalizarChave_(v)===normalizarChave_(r[i+3]))))return {ok:false,reason:"Referência já registrada."};
+ const id=Utilities.getUuid();appendOperacional_(ss,"CONTATOS_INSTITUCIONAIS",CONTATOS_INST_HEADERS_,[id,unidade,tipo,setor,nome,telefone,whatsapp,email,fonte,"INFORMADO — validar vigência",new Date().toISOString()]);return {ok:true,id};
+ });
 }

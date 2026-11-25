@@ -41,3 +41,31 @@ test("mapeamento conserva atuação pastoral e fonte independente da programaç�
  const m=["M1","D01","Cidade","Local","Rua","Domingo","9h","Ativo","2026","Fonte","Validar","Missa","","RECORRENTE INFORMADA","Ativa — fonte","Fonte pastoral"];
  const x=run(d,p,c,[m]).missas[0];assert.equal(x.pastoral,"Ativa — fonte");assert.equal(x.fontePastoral,"Fonte pastoral");assert.equal(x.statusProgramacao,"RECORRENTE INFORMADA");
 });
+
+vm.runInContext(await readFile(new URL("../apps-script/Gestao.gs",import.meta.url),"utf8"),context);
+test("níveis regimentais, representação paroquial e limites do escopo regional",()=>{
+ const data={dioceses:[{id:"D01"},{id:"D13"}],paroquias:[{id:"P01"}]};
+ const valid={nivel:"ARQUIDIOCESANO_DIOCESANO",unidade:"D01",nome:"Equipe teste",fonte:"Referência fictícia"};
+ assert.equal(context.validarEquipeRascunho_(valid,data,[]).tipo,"COORDENACAO");
+ assert.equal(context.validarEquipeRascunho_({...valid,nivel:"PAROQUIAL_REPRESENTANTE",unidade:"P01"},data,[]).tipo,"REPRESENTACAO");
+ assert.throws(()=>context.validarEquipeRascunho_({...valid,nivel:"NACIONAL"},data,[]));
+ assert.throws(()=>context.validarEquipeRascunho_({...valid,unidade:"D13"},data,[]));
+ assert.throws(()=>context.validarEquipeRascunho_(valid,data,[["X","D01","","ARQUIDIOCESANO_DIOCESANO","","RASCUNHO"]]));
+ assert.throws(()=>context.validarEquipeRascunho_({...valid,nome:"=FORMULA()"},data,[]));
+});
+test("gestão nega antes de leitura ou escrita sem identidade confirmada",()=>{
+ context.Session={getActiveUser:()=>({getEmail:()=>""})};
+ context.gestaoConfig_=()=>({operacionalId:"test",questionarioId:"test"});
+ context.SpreadsheetApp={openById:()=>{throw Error("não deve ler")}};
+ assert.equal(context.consultarGestao().ok,false);
+ assert.equal(context.criarCoordenacaoRascunho({}).ok,false);
+});
+test("prévia sem envio de respostas pessoais, portal separado e sem acesso a planilhas",async()=>{
+ const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");
+ assert.match(h,/v0\.7/);assert.match(h,/Não há gravação de respostas/);
+ assert.match(h,/Nenhum voto ou candidatura será registrado/);
+ assert.doesNotMatch(h,/salvarPessoa\(|registrarVoto\(/);
+ const portal=await readFile(new URL("../publico/index.html",import.meta.url),"utf8");
+ assert.match(portal,/Acessar área privada/);assert.match(portal,/pastoraldosurdocentro\.blogspot\.com/);
+ assert.doesNotMatch(portal,/docs\.google\.com\/spreadsheets|google\.script\.run/);
+});

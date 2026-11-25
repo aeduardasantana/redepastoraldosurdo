@@ -85,7 +85,7 @@ function mostrarEndereco(parent,x){
 }
 function item(parent,x,kind,choose=false){
  const a=document.createElement("article");a.className="result";
- add(a,"div",x.tipo||({dioceses:"Jurisdição",paroquias:"Unidade paroquial",comunidades:"Comunidade",missas:"Celebração em Libras"}[kind])).className="kicker";
+ add(a,"div",(kind==="missas"?x.programacao||x.tipo:x.tipo)||({dioceses:"Jurisdição",paroquias:"Unidade paroquial",comunidades:"Comunidade",missas:"Celebração em Libras"}[kind])).className="kicker";
  add(a,"h3",x.nome);
  const d=territorial.dioceses.find(y=>y.id===x.diocese);const p=territorial.paroquias.find(y=>y.id===x.paroquia);
  if(d)add(a,"p",d.nome).className="muted";if(p)add(a,"p","Unidade matriz: "+p.nome).className="muted";
@@ -98,6 +98,13 @@ function item(parent,x,kind,choose=false){
  if(x.situacao)add(tech,"small","Situação cadastral: "+x.situacao);if(x.validacao)add(tech,"small",x.validacao);if(x.fontePastoral)add(tech,"small","Fonte da atuação pastoral: "+x.fontePastoral);if(x.data)add(tech,"small","Referência: "+x.data);if(x.fonte)add(tech,"small","Fonte: "+x.fonte);a.append(tech);
  if(choose&&kind!=="missas"){const btn=add(a,"button","Abrir unidade");btn.type="button";btn.className="secondary";btn.addEventListener("click",()=>{const id={dioceses:"jurisdicao",paroquias:"paroquia",comunidades:"comunidade"}[kind];T(id).value=x.id;T("busca").value="";updateTerritorio(id);T("detalhes").scrollIntoView({block:"nearest"});});}
  parent.append(a);
+}
+function tabelaCelebracoes(parent,rows){
+ const wrap=document.createElement("div");wrap.style.overflowX="auto";wrap.style.gridColumn="1 / -1";
+ const table=document.createElement("table");table.style.width="100%";table.style.borderCollapse="collapse";
+ const head=table.createTHead().insertRow();for(const label of ["Local","Programação","Dia","Horário","Situação","Ficha"]){const th=document.createElement("th");th.scope="col";th.textContent=label;th.style.padding="10px";th.style.textAlign="left";th.style.borderBottom="2px solid #d4e0d8";head.append(th);}
+ const body=table.createTBody();for(const x of rows){const tr=body.insertRow();const unit=territorial.paroquias.find(y=>y.id===x.unidade)||territorial.comunidades.find(y=>y.id===x.unidade);const name=x.nome?.startsWith("Matriz de Campinas /")?"Matriz de Campinas":unit?.nome||x.nome;const values=[name,x.programacao||x.tipo||"",x.dia||"A informar",x.horario||"A informar",x.statusProgramacao==="CONFIRMADA"?"Confirmada":x.statusProgramacao==="RECORRENTE INFORMADA"?"Informada":x.statusProgramacao||"A confirmar"];for(const [i,v] of values.entries()){const td=tr.insertCell();td.style.padding="10px";td.style.verticalAlign="top";td.style.borderBottom="1px solid #d4e0d8";add(td,"span",v);if(i===0){if(x.cidade)add(td,"div",x.cidade).className="muted";const d=territorial.dioceses.find(y=>y.id===x.diocese);if(d)add(td,"div",d.nome).className="muted";}}const td=tr.insertCell();td.style.padding="10px";td.style.borderBottom="1px solid #d4e0d8";const details=document.createElement("details");add(details,"summary","Abrir");item(details,x,"missas");td.append(details);}
+ wrap.append(table);parent.append(wrap);
 }
 function updateTerritorio(changed){
  if(!territorial)return;
@@ -119,9 +126,9 @@ function updateTerritorio(changed){
  else if(kind==="pastorais")source=locaisPastoraisAtivas(territorial,ids,jur.value,par.value,com.value);
  else if(p||c)source=referenciasRelacionadas(territorial,c||p,level);
  else source=territorial.missas.filter(x=>(!prov.value&&!jur.value)||ids.has(x.diocese)&&(!jur.value||x.diocese===jur.value));
- const rows=filtrarAcessibilidade(source,filtro.value).filter(x=>norm([x.nome,x.cidade,x.bairro,x.logradouro,x.cep,x.id,x.tipo,x.dia,x.horario].join(" ")).includes(q));
+ const rows=filtrarAcessibilidade(source,filtro.value).filter(x=>norm([x.nome,x.cidade,x.bairro,x.logradouro,x.cep,x.id,x.tipo,x.programacao,x.dia,x.horario].join(" ")).includes(q));
  const list=T("territorio-lista");list.replaceChildren();T("result-count").textContent=rows.length+" registros encontrados."+(kind==="missas"&&(p||c)?" Confira o vínculo e a situação de cada programação.":"");
- for(const x of rows)item(list,x,x.resultKind||kind,true);
+ if(kind==="missas"&&rows.length)tabelaCelebracoes(list,rows);else for(const x of rows)item(list,x,x.resultKind||kind,true);
  if(!rows.length)add(list,"p","Nenhum registro correspondente aos filtros. Revise a seleção ou solicite inclusão.");
 }
 function refreshParents(){const local=["COMUNIDADE","CAPELA","NUCLEO"].includes(T("new-type").value);const list=local?territorial.paroquias:territorial.dioceses;const rows=list.map(x=>({id:x.id,nome:local?x.nome+" — "+(territorial.dioceses.find(d=>d.id===x.diocese)?.nome||x.diocese):x.nome}));options(T("new-parent"),rows,"Selecione a unidade superior",local?T("paroquia").value:T("jurisdicao").value);}

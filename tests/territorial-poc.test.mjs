@@ -196,3 +196,25 @@ test("opções de cargo por nível preservam a composição local e não impõem
 test("gestão de cargos está disponível na ficha de coordenação",()=>{assert.match(navHtml,/id="cargo-form"/);assert.match(navHtml,/salvarCargoPessoa\(/);assert.match(navHtml,/encerrarCargoPessoa\(/);assert.match(navHtml,/Gerenciar cargo/);});
 
 test("Portal do Agente reúne atalhos existentes e recursos públicos",()=>{assert.match(navHtml,/<section id="portal-agente" hidden>/);assert.match(navHtml,/data-page="portal-agente"/);for(const id of ["territorio","gestao","cadastro-pessoas","grupos","alertas","documentos"])assert.ok(navHtml.includes('data-open="'+id+'"'));assert.match(navHtml,/pastoraldosurdocentro\.blogspot\.com/);assert.match(navHtml,/Regimento Interno/);});
+
+test("ficha ampliada nega acesso externo antes da leitura e limita consulta ao ID",()=>{
+ const previous={Session:context.Session,SpreadsheetApp:context.SpreadsheetApp,territorialConfig_:context.territorialConfig_,gestaoConfig_:context.gestaoConfig_,tabela_:context.tabela_};
+ let reads=0;
+ try{
+ context.territorialConfig_=()=>({owner:"owner@example.test",sourceId:"test"});
+ context.gestaoConfig_=()=>({operacionalId:"test",questionarioId:"test"});
+ context.Session={getActiveUser:()=>({getEmail:()=>"visitor@example.test"})};
+ context.SpreadsheetApp={openById:()=>{reads++;return {};}};
+ assert.equal(context.consultarComplementosFicha("P1","historico").ok,false);assert.equal(reads,0);
+ context.Session={getActiveUser:()=>({getEmail:()=>"owner@example.test"})};
+ context.tabela_=(_ss,aba)=>aba==="PESSOAS"?[["P1","Pessoa teste","","","","","","","","PARCIAL"],["P2","Outra pessoa","","","","","","","","PARCIAL"]]:aba==="EVENTOS"?[["E1","Evento teste"]]:aba==="PARTICIPACOES_EVENTOS"?[["R1","P1","E1","Inscrito","Não verificada","FONTE INTERNA","ORIGEM INTERNA","2026-11-25"],["R2","P2","E1","OUTRA PESSOA","Presente"]]:[];
+ const result=context.consultarComplementosFicha("P1","historico");assert.equal(result.ok,true);
+ const json=JSON.stringify(result);assert.match(json,/Evento teste/);assert.match(json,/Não verificada/);assert.doesNotMatch(json,/OUTRA PESSOA|FONTE INTERNA|ORIGEM INTERNA/);
+ assert.equal(context.consultarComplementosFicha("P3","historico").ok,false);
+ assert.equal(context.consultarComplementosFicha("P1","__proto__").ok,false);
+ }finally{Object.assign(context,previous);}
+});
+test("ficha ampliada disponibiliza seções de consulta e novo indicador",()=>{
+ for(const id of ["familia","socioeconomico","historico"])assert.ok(navHtml.includes('data-ficha-aba="'+id+'"'));
+ assert.match(navHtml,/Coordenações pastorais cadastradas/);assert.match(navHtml,/consultarComplementosFicha\(id,secao\)/);
+});

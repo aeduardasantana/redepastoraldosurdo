@@ -16,6 +16,32 @@ function validarEquipeRascunho_(input,data,existentes){
  if(existentes.some(r=>r[1]===unidade&&r[3]===nivel&&r[5]!=="ARQUIVADA"))throw Error("Já existe registro para este nível e unidade.");
  return {nivel,unidade,nome,fonte,tipo:nivel==="PAROQUIAL_REPRESENTANTE"?"REPRESENTACAO":"COORDENACAO"};
 }
+
+const DOCUMENTOS_HEADERS_=["ID_DOCUMENTO","TITULO","CATEGORIA","URL","VISIBILIDADE","STATUS","ORDEM"];
+const DOCS_ACESSOS_HEADERS_=["ID_ACESSO","ID_PESSOA","IDENTIDADE_GOOGLE","ID_UNIDADE","PERFIL_AUTORIZADO","INICIO_VIGENCIA","FIM_VIGENCIA","STATUS","APROVADO_POR_ID","APROVADO_EM","REVOGADO_EM"];
+const DOCS_COMPOSICAO_HEADERS_=["ID_COMPOSICAO","ID_COORDENACAO","ID_PESSOA","CARGO_FUNCAO","INICIO_VIGENCIA","FIM_VIGENCIA","STATUS","ATO_INDICACAO","DATA_RATIFICACAO","ENCERRADO_EM","MOTIVO_ADMINISTRATIVO_CODIFICADO"];
+function membroRegionalDocumentos_(email,acessos,composicao,equipes,hoje){
+ const dt=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s+"T00:00:00Z"))&&new Date(s+"T00:00:00Z").toISOString().slice(0,10)===s;
+ const vig=(ini,fim)=>dt(ini)&&ini<=hoje&&(!fim||dt(fim)&&fim>=hoje);
+ const e=normalizarEmail_(email);if(!e||!dt(hoje))return false;
+ const validTeams=new Set(equipes.filter(r=>r[1]==="CO"&&r[3]==="REGIONAL"&&["DOCUMENTADA","ATIVA","RATIFICADA"].includes(r[5])).map(r=>r[0]));
+ const grants=acessos.filter(r=>normalizarEmail_(r[2])===e&&r[1]&&r[3]==="CO"&&r[4]==="COORDENACAO_REGIONAL"&&r[7]==="ATIVO"&&r[8]&&r[9]&&!r[10]&&vig(r[5],r[6]));
+ return grants.some(a=>composicao.some(c=>validTeams.has(c[1])&&c[2]===a[1]&&c[3]&&c[6]==="ATIVO"&&!c[9]&&vig(c[4],c[5])));
+}
+function consultarDocumentos(){
+ const publico=[{id:"DOC-REG-2026",titulo:"Regimento Interno da Pastoral do Surdo — 2026",categoria:"Regimento",url:"https://drive.google.com/file/d/1cT0LzVCe0bwhqhtRbaoM_Y4_SzDxjY0z/view"}];
+ const denied={ok:true,publico,regional:false,restritos:[]};
+ try{
+  const email=normalizarEmail_(Session.getActiveUser().getEmail());if(!email)return denied;
+  const cfg=typeof gestaoConfig_==="function"?gestaoConfig_():null;if(!cfg?.operacionalId)return denied;
+  const ss=SpreadsheetApp.openById(cfg.operacionalId);
+  const admin=!!autorizacaoTerritorial_();
+  if(!admin&&!membroRegionalDocumentos_(email,tabela_(ss,"ACESSOS",DOCS_ACESSOS_HEADERS_),tabela_(ss,"COMPOSICAO",DOCS_COMPOSICAO_HEADERS_),tabela_(ss,"COORDENACOES",COORD_HEADERS_),Utilities.formatDate(new Date(),"America/Sao_Paulo","yyyy-MM-dd")))return denied;
+  const docs=tabela_(ss,"DOCUMENTOS",DOCUMENTOS_HEADERS_).filter(r=>r[4]==="COORDENACAO_REGIONAL"&&r[5]==="ATIVO"&&r[0]&&r[1]&&/^https:\/\/(?:docs\.google\.com\/(?:document|spreadsheets|presentation)\/d\/[A-Za-z0-9_-]+\/(?:edit|view)|drive\.google\.com\/file\/d\/[A-Za-z0-9_-]+\/view)$/.test(r[3])).sort((a,b)=>(Number(a[6])||0)-(Number(b[6])||0)).map(r=>({id:r[0],titulo:r[1],categoria:r[2],url:r[3]}));
+  return {ok:true,publico,regional:true,restritos:docs};
+ }catch(e){return denied;}
+}
+
 function consultarGestao(){
  try{
  const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};

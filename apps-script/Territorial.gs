@@ -84,15 +84,15 @@ const FICHAS_TERRITORIAIS_={
 function fichaTerritorialDados_(row,def){return Object.fromEntries(Object.entries(def.fields).map(([key,i])=>[key,String(row[i]??"")]));}
 function fichaTerritorialRows_(ss,def){const sh=ss.getSheetByName(def.aba);if(!sh||sh.getLastRow()<1||sh.getLastRow()>5000||sh.getRange(1,def.status+1).getDisplayValue()!=="Status cadastro")throw Error("Estrutura cadastral incompatível.");return {sh,rows:sh.getRange(1,1,sh.getLastRow(),def.width).getDisplayValues()};}
 function consultarFichaTerritorial(tipo,id){
- try{const cfg=autorizacaoTerritorial_();const def=FICHAS_TERRITORIAIS_[tipo];if(!cfg||!def)return {ok:false,reason:"Acesso negado ou tipo inválido."};const {rows}=fichaTerritorialRows_(SpreadsheetApp.openById(cfg.sourceId),def);const r=rows.slice(1).find(x=>x[0]===id&&x[def.status]!=="ARQUIVADO");if(!r)return {ok:false,reason:"Cadastro indisponível."};const campos=fichaTerritorialDados_(r,def);return {ok:true,campos,revisao:JSON.stringify(campos)};}catch(e){return {ok:false,reason:"Ficha indisponível."};}
+ try{const cfg=autorizacaoTerritorial_();const def=Object.prototype.hasOwnProperty.call(FICHAS_TERRITORIAIS_,tipo)?FICHAS_TERRITORIAIS_[tipo]:null;if(!cfg||!def)return {ok:false,reason:"Acesso negado ou tipo inválido."};const {rows}=fichaTerritorialRows_(SpreadsheetApp.openById(cfg.sourceId),def);const r=rows.slice(1).find(x=>x[0]===id&&x[def.status]!=="ARQUIVADO");if(!r)return {ok:false,reason:"Cadastro indisponível."};const campos=fichaTerritorialDados_(r,def);return {ok:true,campos,revisao:JSON.stringify(campos)};}catch(e){return {ok:false,reason:"Ficha indisponível."};}
 }
 function salvarFichaTerritorial(input){
- const cfg=autorizacaoTerritorial_(),def=FICHAS_TERRITORIAIS_[input?.tipo];if(!cfg||!def)return {ok:false,reason:"Acesso negado ou tipo inválido."};let lock;
+ const cfg=autorizacaoTerritorial_(),def=Object.prototype.hasOwnProperty.call(FICHAS_TERRITORIAIS_,input?.tipo)?FICHAS_TERRITORIAIS_[input.tipo]:null;if(!cfg||!def)return {ok:false,reason:"Acesso negado ou tipo inválido."};let lock;
  try{
   const clean=(v)=>{if(typeof v!=="string"||v.length>1000||/^[=]|[\u0000-\u001f\u007f]/.test(v.trim()))throw Error("Campo inválido.");return v.trim();};
   const values={};for(const key of Object.keys(def.fields))values[key]=clean(input.campos?.[key]??"");
   if(values.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email))return {ok:false,reason:"E-mail inválido."};
-  if(values.cnpj&&!/^\d{14}$/.test(values.cnpj.replace(/[.\-\/]/g,"")))return {ok:false,reason:"Confira o formato do CNPJ (14 dígitos)."};
+  if(values.cnpj&&!/^[A-Z0-9]{12}\d{2}$/i.test(values.cnpj.replace(/[.\-\/]/g,"")))return {ok:false,reason:"Confira o formato do CNPJ (14 posições)."};
   if(values.cep&&!/^\d{5}-?\d{3}$/.test(values.cep))return {ok:false,reason:"CEP inválido."};
   lock=LockService.getScriptLock();if(!lock.tryLock(5000))return {ok:false,reason:"Tente novamente."};
   const t=consultarTerritorio();if(!t.ok)return t;const data=t.data,ss=SpreadsheetApp.openById(cfg.sourceId);const {sh,rows}=fichaTerritorialRows_(ss,def);
@@ -113,6 +113,7 @@ function salvarFichaTerritorial(input){
    if(!values.tipo)values.tipo=values.programacao;
    if(!old){extra[8]=new Date().toISOString().slice(0,10);extra[9]="Registro administrativo";}
   }
+  const matchKeys=input.tipo==="paroquias"?["diocese","nome","cidade","bairro"]:input.tipo==="comunidades"?["paroquia","nome","cidade","bairro"]:["diocese","unidade","nome","programacao","dia","horario"];if(rows.slice(1).some(r=>r[0]!==input.id&&r[def.status]!=="ARQUIVADO"&&matchKeys.every(k=>normalizarChave_(r[def.fields[k]])===normalizarChave_(values[k]))))return {ok:false,reason:"Já existe registro equivalente. Abra a ficha existente."};
   const id=old?old[0]:Utilities.getUuid(), target=old?idx+1:sh.getLastRow()+1;
   if(!old){if(target>5000)return {ok:false,reason:"Limite atual da base."};if(target>sh.getMaxRows())sh.insertRowsAfter(sh.getMaxRows(),100);const r=Array(def.width).fill("");r[0]=id;r[def.status]="ATIVO";for(const [k,i] of Object.entries(def.fields))r[i]=values[k];for(const [i,v] of Object.entries(extra))r[Number(i)]=v;sh.getRange(target,1,1,def.width).setNumberFormat("@").setValues([r]);}
   else {for(const [k,i] of Object.entries(def.fields))if(values[k]!==old[i])sh.getRange(target,i+1).setNumberFormat("@").setValue(values[k]);for(const [i,v] of Object.entries(extra))if(v!==old[Number(i)])sh.getRange(target,Number(i)+1).setNumberFormat("@").setValue(v);}
@@ -120,7 +121,7 @@ function salvarFichaTerritorial(input){
  }catch(e){return {ok:false,reason:"Gravação não confirmada. Confira a ficha e tente novamente."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
 }
 function arquivarFichaTerritorial(tipo,id,revisao){
- const cfg=autorizacaoTerritorial_(),def=FICHAS_TERRITORIAIS_[tipo];if(!cfg||!def)return {ok:false,reason:"Acesso negado."};let lock;
+ const cfg=autorizacaoTerritorial_(),def=Object.prototype.hasOwnProperty.call(FICHAS_TERRITORIAIS_,tipo)?FICHAS_TERRITORIAIS_[tipo]:null;if(!cfg||!def)return {ok:false,reason:"Acesso negado."};let lock;
  try{lock=LockService.getScriptLock();if(!lock.tryLock(5000))return {ok:false,reason:"Tente novamente."};const ss=SpreadsheetApp.openById(cfg.sourceId),{sh,rows}=fichaTerritorialRows_(ss,def);const idx=rows.findIndex((r,i)=>i>0&&r[0]===id&&r[def.status]!=="ARQUIVADO");if(idx<1||JSON.stringify(fichaTerritorialDados_(rows[idx],def))!==revisao)return {ok:false,reason:"Reabra a ficha antes de excluir."};
  const op=typeof gestaoConfigAutorizada_==="function"?gestaoConfigAutorizada_():null;if(!op?.operacionalId)return {ok:false,reason:"Não foi possível verificar os vínculos da base operacional."};
  const books=[ss,SpreadsheetApp.openById(op.operacionalId)];for(const book of books)for(const tab of book.getSheets()){const refs=tab.createTextFinder(id).matchEntireCell(true).matchCase(true).findAll();if(refs.some(r=>!(book.getId()===ss.getId()&&tab.getSheetId()===sh.getSheetId()&&r.getRow()===idx+1)))return {ok:false,reason:"Registro possui vínculos ou referências. Revise-os antes de arquivar."};}

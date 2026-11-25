@@ -62,7 +62,7 @@ test("gestão nega antes de leitura ou escrita sem identidade confirmada",()=>{
 });
 test("prévia sem envio de respostas pessoais, portal separado e sem acesso a planilhas",async()=>{
  const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");
- assert.match(h,/v0\.8/);assert.match(h,/Não há gravação de respostas/);
+ assert.match(h,/v0\.9/);assert.match(h,/Não há gravação de respostas/);
  assert.match(h,/Nenhum voto ou candidatura será registrado/);
  assert.doesNotMatch(h,/salvarPessoa\(|registrarVoto\(/);
  const portal=await readFile(new URL("../publico/index.html",import.meta.url),"utf8");
@@ -71,3 +71,5 @@ test("prévia sem envio de respostas pessoais, portal separado e sem acesso a pl
 });
 
 test("cadastro apresenta data de nascimento e endereço estruturado sem enviar dados",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");assert.match(h,/Data de nascimento/);assert.match(h,/el.type="date"/);assert.match(h,/el.inputMode="numeric"/);assert.match(h,/P55","P38","P52","P04","P37","P39","P53","P54"/);assert.doesNotMatch(h,/salvarPessoa\(/);});
+
+test("navegação por módulos inicia na home, mantém um painel visível e carrega cada consulta",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");const src=h.split("// BEGIN_PAGE_NAV")[1].split("// END_PAGE_NAV")[0];const ctx=vm.createContext({});vm.runInContext(src,ctx);assert.equal(ctx.paginaValida("cadastro-pessoas"),"cadastro-pessoas");assert.equal(ctx.paginaValida("inexistente"),"home");const ids=["home","territorio","inclusao","gestao","cadastro-pessoas","eleicoes","acessos-gestao","pagina-publica","acesso"];for(const id of ids){assert.ok(h.includes('data-page="'+id+'"'));assert.ok(h.includes('<section id="'+id+'"'+(id==="home"?">":" hidden>")));}assert.match(h,/T\(p\)\.hidden=p!==id/);assert.match(h,/\(id==="gestao"\|\|id==="cadastro-pessoas"\)&&!gestao\)carregarGestao\(\)/);assert.match(h,/abrirPagina\("home"\);/);assert.match(h,/questionario-status/);assert.match(h,/function atualizarHome\(/);assert.doesNotMatch(h,/<nav aria-label="Menu"><a/);});

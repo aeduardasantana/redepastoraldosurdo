@@ -109,7 +109,7 @@ const PRE_HEADERS_=["ID_PRE_CADASTRO","NOME_CONFORME_FONTE","CONTATO_CONFORME_FO
 function consultarPreCadastros(){
  try{const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
  const rows=tabela_(SpreadsheetApp.openById(cfg.operacionalId),"PRE_CADASTROS",PRE_HEADERS_);
- return {ok:true,registros:rows.filter(r=>r[10]==="PENDENTE_IDENTIFICACAO").map(r=>({id:r[0],nome:r[12]||r[1],contato:r[13]||r[2],funcao:r[3],local:r[4],cidade:r[5],situacao:r[6],data:r[7],ddd:r[14],diocese:r[15],unidade:r[16],referencia:r[17],validacao:r[18]}))};
+ return {ok:true,registros:rows.filter(r=>r[10]==="PENDENTE_IDENTIFICACAO").map(r=>({id:r[0],nome:r[12],contato:r[13],funcao:r[3],local:r[4],cidade:r[5],situacao:r[6],data:r[7],ddd:r[14],diocese:r[15],unidade:r[16],referencia:r[17],validacao:r[18]}))};
  }catch(e){return {ok:false,reason:"Pré-cadastros indisponíveis."};}
 }
 function salvarPreCadastro(input){
@@ -117,15 +117,19 @@ function salvarPreCadastro(input){
  let lock;try{
  const clean=(v,max)=>{if(typeof v!=="string"||v.length>max||/^[=+\-@]|[\u0000-\u001f\u007f]/.test(v.trim()))throw Error("Campo inválido.");return v.trim();};
  if(input?.autorizado!==true)return {ok:false,reason:"Confirme autorização para registrar o contato."};
- const nome=clean(input.nome,180),contato=clean(input.contato,200),ref=clean(input.referencia||"",100);const linked=(t.data.locais||[]).find(x=>x.id===ref);const canon=[...t.data.paroquias,...t.data.comunidades].find(x=>x.id===ref);if(ref&&!linked&&!canon)return {ok:false,reason:"Local não reconhecido."};const local=linked?.nome||canon?.nome||clean(input.local,180),cidade=linked?.cidade||canon?.cidade||clean(input.cidade,120),ddd=linked?.ddd||(t.data.locais||[]).find(x=>x.unidade===canon?.id)?.ddd||"";const phone=padronizarContato_(contato,ddd);
+ const idEdicao=clean(input.id||"",100),nome=clean(input.nome,180),contato=clean(input.contato,200),funcao=clean(input.funcao||"",120),ref=clean(input.referencia||"",100);if(/[\/,;]|\s*-\s*Vice$/i.test(nome))return {ok:false,reason:"Informe um único nome; registre o cargo em campo separado."};const linked=(t.data.locais||[]).find(x=>x.id===ref);const canon=[...t.data.paroquias,...t.data.comunidades].find(x=>x.id===ref);if(ref&&!linked&&!canon)return {ok:false,reason:"Local não reconhecido."};const local=linked?.nome||canon?.nome||clean(input.local,180),cidade=linked?.cidade||canon?.cidade||clean(input.cidade,120),ddd=linked?.ddd||(t.data.locais||[]).find(x=>x.unidade===canon?.id)?.ddd||"";const phone=padronizarContato_(contato,ddd);
  if(!nome&&!contato)return {ok:false,reason:"Informe pelo menos nome ou contato."};
  lock=LockService.getScriptLock();if(!lock.tryLock(5000))return {ok:false,reason:"Tente novamente."};
  const ss=SpreadsheetApp.openById(cfg.operacionalId),s=ss.getSheetByName("PRE_CADASTROS"),rows=tabela_(ss,"PRE_CADASTROS",PRE_HEADERS_);
- if(rows.some(r=>r[10]==="PENDENTE_IDENTIFICACAO"&&normalizarChave_(r[1])===normalizarChave_(nome)&&normalizarChave_(r[2])===normalizarChave_(contato)&&normalizarChave_(r[4])===normalizarChave_(local)))return {ok:false,reason:"Referência já cadastrada. Revise os registros existentes."};
+ if(rows.some(r=>r[0]!==idEdicao&&r[10]==="PENDENTE_IDENTIFICACAO"&&normalizarChave_(r[12])===normalizarChave_(nome)&&normalizarChave_(r[13])===normalizarChave_(phone.contato)&&normalizarChave_(r[4])===normalizarChave_(local)))return {ok:false,reason:"Referência já cadastrada. Revise os registros existentes."};
+ if(contato&&!phone.contato)return {ok:false,reason:"Confira o telefone e o DDD."};
+ if(idEdicao){const raw=s.getRange(2,1,Math.max(1,s.getLastRow()-1),PRE_HEADERS_.length).getDisplayValues();const idx=raw.findIndex(r=>r[0]===idEdicao&&r[10]==="PENDENTE_IDENTIFICACAO");if(idx<0)return {ok:false,reason:"Cadastro indisponível."};const old=raw[idx];if(old[11])return {ok:false,reason:"Registro já vinculado a uma ficha de pessoa."};old[3]=funcao;old[4]=local;old[5]=cidade;old[12]=padronizarNome_(nome);old[13]=phone.contato;old[14]=ddd;old[15]=linked?.diocese||canon?.diocese||"";old[16]=linked?.unidade||canon?.id||"";old[17]=linked?.id||"";old[18]=phone.status;s.getRange(idx+2,1,1,PRE_HEADERS_.length).setNumberFormat("@").setValues([old]);SpreadsheetApp.flush();return {ok:true,id:idEdicao};}
  const id=Utilities.getUuid(),row=s.getLastRow()+1;if(row>1000)return {ok:false,reason:"Limite da base."};if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
- s.getRange(row,1,1,PRE_HEADERS_.length).setNumberFormat("@").setValues([[id,nome,contato,"",local,cidade,"",new Date().toISOString(),"Registro administrativo autorizado","","PENDENTE_IDENTIFICACAO","",padronizarNome_(nome),phone.contato,ddd,linked?.diocese||canon?.diocese||"",linked?.unidade||canon?.id||"",linked?.id||"",phone.status]]);SpreadsheetApp.flush();return {ok:true,id};
+ s.getRange(row,1,1,PRE_HEADERS_.length).setNumberFormat("@").setValues([[id,nome,contato,funcao,local,cidade,"",new Date().toISOString(),"Registro administrativo autorizado","","PENDENTE_IDENTIFICACAO","",padronizarNome_(nome),phone.contato,ddd,linked?.diocese||canon?.diocese||"",linked?.unidade||canon?.id||"",linked?.id||"",phone.status]]);SpreadsheetApp.flush();return {ok:true,id};
  }catch(e){return {ok:false,reason:"Não foi possível confirmar o pré-cadastro. Confira a planilha."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
 }
+
+function arquivarPreCadastro(id){return operacaoRede_(ss=>{const key=textoOperacional_(id,100);tabela_(ss,"PRE_CADASTROS",PRE_HEADERS_);const s=ss.getSheetByName("PRE_CADASTROS");const raw=s.getRange(2,1,Math.max(1,s.getLastRow()-1),PRE_HEADERS_.length).getDisplayValues();const idx=raw.findIndex(r=>r[0]===key&&r[10]==="PENDENTE_IDENTIFICACAO");if(idx<0)return {ok:false,reason:"Cadastro indisponível."};if(raw[idx][11])return {ok:false,reason:"Registro vinculado a uma ficha; revise o vínculo antes de excluir."};s.getRange(idx+2,11).setValue("ARQUIVADO");SpreadsheetApp.flush();return {ok:true,id:key};});}
 
 const REF_COORD_HEADERS_=["ID_REFERENCIA","ID_COORDENACAO","NOME_NA_FONTE","SETOR_NA_FONTE","FUNCAO_NA_FONTE","ORIGEM_TERRITORIAL","VIGENCIA_INFORMADA","FONTE","VALIDACAO","ID_PESSOA_VINCULADA"];
 const GRUPO_HEADERS_=["ID_GRUPO","ID_UNIDADE","NOME","OBJETIVO","STATUS","CRIADO_EM"];

@@ -392,3 +392,34 @@ function salvarContatoInstitucional(input){
  const id=Utilities.getUuid();appendOperacional_(ss,"CONTATOS_INSTITUCIONAIS",CONTATOS_INST_HEADERS_,[id,unidade,tipo,setor,nome,telefone,whatsapp,email,fonte,"INFORMADO — validar vigência",new Date().toISOString()]);return {ok:true,id};
  });
 }
+
+
+/** Consultas separadas para a ficha ampliada, restritas ao titular institucional. */
+const FICHA_COMPLEMENTOS_ = {
+ familia: [
+ ["RELACOES_PESSOAS",["ID_RELACAO","ID_PESSOA","ID_PESSOA_RELACIONADA","NOME_RELACIONADO_SEM_CADASTRO","TIPO_RELACAO","CONTATO_COMPARTILHADO","INICIO","FIM","STATUS","ORIGEM","OBSERVACAO_RESTRITA"],[2,3,4,5,6,7,8]],
+ ["CONTATOS_EMERGENCIA",["ID_CONTATO","ID_PESSOA","ID_PESSOA_CONTATO","NOME_CONTATO","GRAU_RELACAO","TELEFONE","WHATSAPP","MEIO_COMUNICACAO","ORDEM_PREFERENCIA","AUTORIZACAO_OU_BASE_REGISTRADA","DATA_CONFIRMACAO","STATUS","OBSERVACAO_RESTRITA"],[2,3,4,5,6,7,8,10,11]]
+ ],
+ socioeconomico: [
+ ["PERFIL_SOCIOECONOMICO",["ID_AVALIACAO","ID_PESSOA","DATA_REFERENCIA","SITUACAO_TRABALHO","VINCULO_TRABALHISTA","OCUPACAO","ESCOLARIDADE","PROCURA_TRABALHO","CADUNICO_SITUACAO","CADUNICO_DATA_ATUALIZACAO","RECEBE_BENEFICIO","RENDA_DOMICILIAR_MENSAL_BRL","NUM_MORADORES_DOMICILIO","RENDA_DOMICILIAR_PER_CAPITA_BRL","FAIXA_PER_CAPITA_SM","SALARIO_MINIMO_REFERENCIA_BRL","CONDICAO_OCUPACAO_DOMICILIO","ARRANJO_DOMICILIAR","NECESSIDADE_APOIO_AUTODECLARADA","BASE_LEGAL_OU_AUTORIZACAO","ORIGEM","OBSERVACAO_RESTRITA","MOTIVO_FORA_FORCA_TRABALHO","INGRESSO_SERVICO_PUBLICO","FORMA_CESSAO_DOMICILIO"],[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,22,23,24]],
+ ["BENEFICIOS_PESSOAS",["ID_BENEFICIO","ID_PESSOA","ID_AVALIACAO","BENEFICIO_DECLARADO","TITULARIDADE","SITUACAO","DATA_REFERENCIA","ORIGEM","OBSERVACAO_RESTRITA"],[3,4,5,6]]
+ ],
+ historico: [
+ ["PARTICIPACOES_EVENTOS",["ID_PARTICIPACAO","ID_PESSOA","ID_EVENTO","SITUACAO_INSCRICAO","PRESENCA","REFERENCIAS_ORIGEM","ORIGEM_REGISTRO","DATA_REGISTRO"],[2,3,4,7]]
+ ]
+};
+function consultarComplementosFicha(id,secao){
+ try{
+  const titular=autorizacaoTerritorial_(),cfg=gestaoConfigAutorizada_();
+  if(!titular||!cfg||typeof id!=="string"||!Object.prototype.hasOwnProperty.call(FICHA_COMPLEMENTOS_,secao))return {ok:false,reason:"Consulta restrita."};
+  const ss=SpreadsheetApp.openById(cfg.operacionalId),pessoas=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_);
+  if(!pessoas.some(r=>r[0]===id&&["CADASTRADO","PARCIAL"].includes(r[9])))return {ok:false,reason:"Ficha indisponível."};
+  const nomes=new Map(pessoas.map(r=>[r[0],r[1]]));
+  const eventos=secao==="historico"?new Map(tabela_(ss,"EVENTOS",["ID_EVENTO","NOME","ANO","DATA_INICIO","DATA_FIM","SITUACAO","ORIGEM"]).map(r=>[r[0],r[1]])):new Map();
+  const grupos=FICHA_COMPLEMENTOS_[secao].map(([aba,headers,indices])=>{
+   const rows=tabela_(ss,aba,headers).filter(r=>r[1]===id);
+   return {aba,registros:rows.map(r=>indices.filter(i=>r[i]!==""&&r[i]!=null).map(i=>({campo:headers[i],valor:i===2&&aba==="PARTICIPACOES_EVENTOS"?(eventos.get(r[i])||r[i]):i===2&&["RELACOES_PESSOAS","CONTATOS_EMERGENCIA"].includes(aba)?(nomes.get(r[i])||r[i]):String(r[i])})))};
+  });
+  return {ok:true,grupos};
+ }catch(e){return {ok:false,reason:"Consulta complementar indisponível."};}
+}

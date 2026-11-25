@@ -49,7 +49,7 @@ function consultarGestao(){
  const equipes=tabela_(ss,"COORDENACOES",COORD_HEADERS_).map(r=>({id:r[0],unidade:r[1],nome:r[2],nivel:r[3],tipo:r[4],status:r[5],fonte:r[7],validacao:r[8]}));
  const q=tabela_(SpreadsheetApp.openById(cfg.questionarioId),"PERGUNTAS",QUEST_HEADERS_).map(r=>({id:r[0],bloco:r[1],pergunta:r[2],tipo:r[3],opcoes:r[4],regra:r[5]}));
  const cargos=tabela_(ss,"CARGOS_REGIMENTAIS",["NIVEL_REFERENCIA","CARGO","ORIGEM","PROVIMENTO","OBSERVACAO"]).map(r=>({nivel:r[0],cargo:r[1],origem:r[2],provimento:r[3],obs:r[4]}));
- const referencias=tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_).map(r=>({id:r[0],equipe:r[1],nome:r[2],setor:r[3],funcao:r[4],origem:r[5],vigencia:r[6],fonte:r[7],validacao:r[8],vinculado:!!r[9]}));
+ const pessoas=new Map(tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(r=>["CADASTRADO","PARCIAL"].includes(r[9])).map(r=>[r[0],r]));const referencias=tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_).map(r=>{const p=pessoas.get(r[9]);return {id:r[0],equipe:r[1],nome:p?.[1]||r[2],pessoa:p?.[0]||"",telefone:p&&p[8]!=="SEM_CONTATO"?p[7]:"",preferido:p?.[2]||"",setor:r[3],funcao:r[4],origem:r[5],vigencia:r[6],vinculado:!!p,instituicao:/institui[cç][aã]o/i.test(r[4])};});
  return {ok:true,equipes,questionario:q,cargos,referencias};
  }catch(e){return {ok:false,reason:"Estrutura de gestão indisponível."};}
 }
@@ -100,10 +100,11 @@ function salvarCadastroBasico(input){
  const editId=typeof input.id==="string"?input.id.trim():"";const old=editId?rows.find(r=>r[0]===editId):null;if(editId&&(!old||!["CADASTRADO","PARCIAL"].includes(old[9])))return {ok:false,reason:"Registro indisponível."};if(old&&input.revisao!==old[11])return {ok:false,reason:"O cadastro foi atualizado. Abra novamente a ficha."};const token=v.cpf?cpfToken_(v.cpf,rows):(old?.[22]||"");
  if(token&&rows.some(r=>r[0]!==editId&&r[22]===token))return {ok:false,reason:"Possível cadastro existente. Encaminhe para revisão administrativa."};
  if(v.nome&&v.nascimento&&rows.some(r=>r[0]!==editId&&normalizarChave_(r[1])===normalizarChave_(v.nome)&&r[3]===v.nascimento))return {ok:false,reason:"Possível cadastro existente com mesmo nome e nascimento. Solicite revisão antes de cadastrar novamente."};
+ if(v.telefone&&rows.some(r=>r[0]!==editId&&r[7]&&r[7].replace(/\D/g,"")===v.telefone.replace(/\D/g,"")&&normalizarChave_(r[1])===normalizarChave_(v.nome)))return {ok:false,reason:"Já existe cadastro com este nome e telefone. Abra a ficha existente."};
  const id=old?editId:Utilities.getUuid(),now=new Date().toISOString(),row=old?s.getRange(2,1,s.getLastRow()-1,1).getDisplayValues().findIndex(r=>r[0]===editId)+2:s.getLastRow()+1;if(old&&row<2)throw Error("Registro não localizado.");
  if(row>1000)return {ok:false,reason:"Limite do cadastro inicial."};
  if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
- const status=v.nome&&v.nascimento?"CADASTRADO":"PARCIAL";const values=[id,v.nome,v.preferido,v.nascimento,v.cidade,v.uf,v.email,v.telefone,v.canal,status,old?.[10]||now,now,v.pais,v.cep,v.bairro,v.logradouro,v.numero,v.complemento,v.unidade,now,"CAD-BASICO-0.14","DECLARACAO_DO_OPERADOR",token];
+ const status=v.nome&&v.nascimento?"CADASTRADO":"PARCIAL";const values=[id,v.nome,v.preferido,v.nascimento,v.cidade,v.uf,v.email,v.telefone,v.canal,status,old?.[10]||now,now,v.pais,v.cep,v.bairro,v.logradouro,v.numero,v.complemento,old?.[18]||v.unidade,now,"CAD-BASICO-0.14","DECLARACAO_DO_OPERADOR",token];
  s.getRange(row,1,1,values.length).setNumberFormat("@").setValues([values]);SpreadsheetApp.flush();
  return {ok:true,id,status};
  }catch(e){return {ok:false,reason:"Não foi possível confirmar a gravação. Confira a planilha antes de tentar novamente."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
@@ -138,7 +139,8 @@ function consultarPreCadastros(){
  return {ok:true,registros:rows.filter(r=>r[10]==="PENDENTE_IDENTIFICACAO").map(r=>({id:r[0],nome:r[12],contato:r[13],funcao:r[3],local:r[4],cidade:r[5],situacao:r[6],data:r[7],ddd:r[14],diocese:r[15],unidade:r[16],referencia:r[17],validacao:r[18]}))};
  }catch(e){return {ok:false,reason:"Pré-cadastros indisponíveis."};}
 }
-function salvarPreCadastro(input){
+function salvarPreCadastro(input){return {ok:false,reason:"Utilize o cadastro único de pessoas."};}
+function salvarPreCadastroLegado_(input){
  const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};const t=consultarTerritorio();if(!t.ok)return t;
  let lock;try{
  const clean=(v,max)=>{if(typeof v!=="string"||v.length>max||/^[=+\-@]|[\u0000-\u001f\u007f]/.test(v.trim()))throw Error("Campo inválido.");return v.trim();};
@@ -155,7 +157,8 @@ function salvarPreCadastro(input){
  }catch(e){return {ok:false,reason:"Não foi possível confirmar o pré-cadastro. Confira a planilha."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
 }
 
-function arquivarPreCadastro(id){return operacaoRede_(ss=>{const key=textoOperacional_(id,100);tabela_(ss,"PRE_CADASTROS",PRE_HEADERS_);const s=ss.getSheetByName("PRE_CADASTROS");const raw=s.getRange(2,1,Math.max(1,s.getLastRow()-1),PRE_HEADERS_.length).getDisplayValues();const idx=raw.findIndex(r=>r[0]===key&&r[10]==="PENDENTE_IDENTIFICACAO");if(idx<0)return {ok:false,reason:"Cadastro indisponível."};if(raw[idx][11])return {ok:false,reason:"Registro vinculado a uma ficha; revise o vínculo antes de excluir."};s.getRange(idx+2,11).setValue("ARQUIVADO");SpreadsheetApp.flush();return {ok:true,id:key};});}
+function arquivarPreCadastro(id){return {ok:false,reason:"Utilize o cadastro único de pessoas."};}
+function arquivarPreCadastroLegado_(id){return operacaoRede_(ss=>{const key=textoOperacional_(id,100);tabela_(ss,"PRE_CADASTROS",PRE_HEADERS_);const s=ss.getSheetByName("PRE_CADASTROS");const raw=s.getRange(2,1,Math.max(1,s.getLastRow()-1),PRE_HEADERS_.length).getDisplayValues();const idx=raw.findIndex(r=>r[0]===key&&r[10]==="PENDENTE_IDENTIFICACAO");if(idx<0)return {ok:false,reason:"Cadastro indisponível."};if(raw[idx][11])return {ok:false,reason:"Registro vinculado a uma ficha; revise o vínculo antes de excluir."};s.getRange(idx+2,11).setValue("ARQUIVADO");SpreadsheetApp.flush();return {ok:true,id:key};});}
 
 const REF_COORD_HEADERS_=["ID_REFERENCIA","ID_COORDENACAO","NOME_NA_FONTE","SETOR_NA_FONTE","FUNCAO_NA_FONTE","ORIGEM_TERRITORIAL","VIGENCIA_INFORMADA","FONTE","VALIDACAO","ID_PESSOA_VINCULADA"];
 const GRUPO_HEADERS_=["ID_GRUPO","ID_UNIDADE","NOME","OBJETIVO","STATUS","CRIADO_EM"];
@@ -256,17 +259,49 @@ function padronizarContato_(s,ddd){
  }
  return {contato:out.join(" / "),status:out.length?"FORMATADO":"SEM CONTATO"};
 }
+
+const VINC_PESSOA_HEADERS_=["ID_VINCULO","ID_PESSOA","ID_UNIDADE","TIPO_VINCULO","PRINCIPAL","INICIO","FIM","STATUS","FONTE_VALIDACAO","CARGO_FUNCAO","SETOR"];
+const MEMBROS_PASTORAIS_HEADERS_=["ID vínculo pastoral","ID pessoa","ID pastoral","Tipo de participação","Setor","Início","Fim","Status cadastro","Observações restritas"];
+function vinculosPessoas_(ss){
+ const territoriais=tabela_(ss,"VINCULOS_TERRITORIAIS",VINC_PESSOA_HEADERS_).filter(r=>r[7]==="ATIVO").map(r=>({id:r[0],pessoa:r[1],destino:r[2],tipo:"Território",cargo:r[9],setor:r[10]}));
+ const pastorais=tabela_(ss,"MEMBROS_PASTORAIS",MEMBROS_PASTORAIS_HEADERS_).filter(r=>r[7]==="ATIVO").map(r=>({id:r[0],pessoa:r[1],destino:r[2],tipo:"Pastoral",cargo:r[3],setor:r[4]}));
+ const refs=tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_).filter(r=>r[9]).map(r=>({id:r[0],pessoa:r[9],destino:r[1],tipo:"Coordenação",cargo:r[4],setor:r[3],vigencia:r[6]}));
+ return [...territoriais,...pastorais,...refs];
+}
+function salvarVinculoPessoa(input){
+ const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};const t=consultarTerritorio();if(!t.ok)return t;
+ return operacaoRede_(ss=>{
+ const clean=(x,max)=>{const s=String(x??"").trim();if(s.length>max||/^[=+\-@]|[\u0000-\u001f]/.test(s))throw Error("Campo inválido.");return s;};
+ const pessoa=clean(input.pessoa,100),tipo=clean(input.tipo,25),destino=clean(input.destino,100),cargo=clean(input.cargo,120),setor=clean(input.setor,80);
+ if(!tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).some(r=>r[0]===pessoa&&["CADASTRADO","PARCIAL"].includes(r[9])))return {ok:false,reason:"Pessoa indisponível."};
+ const defs={"Território":["VINCULOS_TERRITORIAIS",VINC_PESSOA_HEADERS_],"Pastoral":["MEMBROS_PASTORAIS",MEMBROS_PASTORAIS_HEADERS_]};
+ if(!Object.prototype.hasOwnProperty.call(defs,tipo))return {ok:false,reason:"Tipo inválido."};
+ if(tipo==="Território"&&!unidadeRedeValida_(destino,t.data)&&!(t.data.locais||[]).some(x=>x.id===destino))return {ok:false,reason:"Selecione um território."};
+ if(tipo==="Pastoral"&&!(t.data.pastorais||[]).some(x=>x.id===destino))return {ok:false,reason:"Selecione uma pastoral."};
+ if(vinculosPessoas_(ss).some(r=>r.pessoa===pessoa&&r.tipo===tipo&&r.destino===destino&&r.cargo===cargo&&r.setor===setor))return {ok:false,reason:"Vínculo já cadastrado."};
+ const [aba,headers]=defs[tipo];tabela_(ss,aba,headers);const sh=ss.getSheetByName(aba),id=Utilities.getUuid(),n=sh.getLastRow()+1;if(n>1000)return {ok:false,reason:"Limite atual da base."};if(n>sh.getMaxRows())sh.insertRowsAfter(sh.getMaxRows(),100);
+ const r=tipo==="Território"?[id,pessoa,destino,"VINCULO_PASTORAL","","","","ATIVO","Cadastro administrativo",cargo,setor]:[id,pessoa,destino,cargo,setor,"","","ATIVO",""];
+ sh.getRange(n,1,1,r.length).setNumberFormat("@").setValues([r]);SpreadsheetApp.flush();return {ok:true,id};
+ });
+}
+function encerrarVinculoPessoa(pessoa,tipo,id){
+ return operacaoRede_(ss=>{const defs={"Território":["VINCULOS_TERRITORIAIS",VINC_PESSOA_HEADERS_],"Pastoral":["MEMBROS_PASTORAIS",MEMBROS_PASTORAIS_HEADERS_]};if(!Object.prototype.hasOwnProperty.call(defs,tipo))return {ok:false,reason:"Gerencie este vínculo em Coordenações."};const [aba,h]=defs[tipo];tabela_(ss,aba,h);const sh=ss.getSheetByName(aba),rows=sh.getRange(1,1,sh.getLastRow(),h.length).getDisplayValues(),i=rows.findIndex((r,j)=>j>0&&r[0]===id&&r[1]===pessoa&&r[7]==="ATIVO");if(i<1)return {ok:false,reason:"Vínculo indisponível."};sh.getRange(i+1,8).setValue("ENCERRADO");SpreadsheetApp.flush();return {ok:true};});
+}
+function vincularReferenciaCoordenacao(ref,pessoa){
+ return operacaoRede_(ss=>{if(!tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).some(r=>r[0]===pessoa&&["CADASTRADO","PARCIAL"].includes(r[9])))return {ok:false,reason:"Pessoa indisponível."};tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_);const sh=ss.getSheetByName("COMPOSICAO_REFERENCIAS"),rows=sh.getRange(1,1,sh.getLastRow(),10).getDisplayValues(),i=rows.findIndex((r,j)=>j>0&&r[0]===ref);if(i<1||rows[i][9])return {ok:false,reason:"Referência já vinculada ou indisponível."};if(/institui[cç][aã]o/i.test(rows[i][4]))return {ok:false,reason:"Referência institucional."};sh.getRange(i+1,10).setValue(pessoa);SpreadsheetApp.flush();return {ok:true};});
+}
+
 function consultarPessoasPorLocal(){
  try{
  const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
  const ss=SpreadsheetApp.openById(cfg.operacionalId);
- return {ok:true,pessoas:tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(r=>["CADASTRADO","PARCIAL"].includes(r[9])).map(r=>({id:r[0],nome:r[1]||r[2]||"Identificação parcial",unidade:r[18],status:r[9]}))};
+ const vinculos=vinculosPessoas_(ss);return {ok:true,pessoas:tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(r=>["CADASTRADO","PARCIAL"].includes(r[9])).map(r=>({id:r[0],nome:r[1]||r[2]||"Identificação parcial",preferido:r[2],telefone:r[8]==="SEM_CONTATO"?"":r[7],email:r[6],unidade:r[18],status:r[9],vinculos:vinculos.filter(v=>v.pessoa===r[0])}))};
  }catch(e){return {ok:false,reason:"Consulta indisponível."};}
 }
 
 function consultarFichaPessoa(id){
- try{const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};const r=tabela_(SpreadsheetApp.openById(cfg.operacionalId),"PESSOAS",PESSOAS_HEADERS_).find(r=>r[0]===id&&["CADASTRADO","PARCIAL"].includes(r[9]));if(!r)return {ok:false,reason:"Ficha indisponível."};
- return {ok:true,pessoa:{id:r[0],nome:r[1],preferido:r[2],nascimento:r[3],cidade:r[4],uf:r[5],email:r[6],telefone:r[7],canal:r[8],revisao:r[11],pais:r[12],cep:r[13],bairro:r[14],logradouro:r[15],numero:r[16],complemento:r[17],unidade:r[18],cpfRegistrado:!!r[22]}};
+ try{const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};const ss=SpreadsheetApp.openById(cfg.operacionalId),r=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).find(r=>r[0]===id&&["CADASTRADO","PARCIAL"].includes(r[9]));if(!r)return {ok:false,reason:"Ficha indisponível."};
+ return {ok:true,pessoa:{id:r[0],nome:r[1],preferido:r[2],nascimento:r[3],cidade:r[4],uf:r[5],email:r[6],telefone:r[7],canal:r[8],revisao:r[11],pais:r[12],cep:r[13],bairro:r[14],logradouro:r[15],numero:r[16],complemento:r[17],unidade:r[18],vinculos:vinculosPessoas_(ss).filter(v=>v.pessoa===id),cpfRegistrado:!!r[22]}};
  }catch(e){return {ok:false,reason:"Ficha indisponível."};}
 }
 const CONTATOS_INST_HEADERS_=["ID_CONTATO","ID_UNIDADE","TIPO_CONTATO","SETOR_FUNCAO","NOME_REFERENCIA","TELEFONE","WHATSAPP","EMAIL","FONTE","VALIDACAO","ATUALIZADO_EM"];

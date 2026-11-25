@@ -23,7 +23,8 @@ function consultarGestao(){
  const equipes=tabela_(ss,"COORDENACOES",COORD_HEADERS_).map(r=>({id:r[0],unidade:r[1],nome:r[2],nivel:r[3],tipo:r[4],status:r[5],fonte:r[7],validacao:r[8]}));
  const q=tabela_(SpreadsheetApp.openById(cfg.questionarioId),"PERGUNTAS",QUEST_HEADERS_).map(r=>({id:r[0],bloco:r[1],pergunta:r[2],tipo:r[3],opcoes:r[4],regra:r[5]}));
  const cargos=tabela_(ss,"CARGOS_REGIMENTAIS",["NIVEL_REFERENCIA","CARGO","ORIGEM","PROVIMENTO","OBSERVACAO"]).map(r=>({nivel:r[0],cargo:r[1],origem:r[2],provimento:r[3],obs:r[4]}));
- return {ok:true,equipes,questionario:q,cargos};
+ const referencias=tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_).map(r=>({id:r[0],equipe:r[1],nome:r[2],setor:r[3],funcao:r[4],origem:r[5],vigencia:r[6],fonte:r[7],validacao:r[8],vinculado:!!r[9]}));
+ return {ok:true,equipes,questionario:q,cargos,referencias};
  }catch(e){return {ok:false,reason:"Estrutura de gestão indisponível."};}
 }
 function criarCoordenacaoRascunho(input){
@@ -124,4 +125,89 @@ function salvarPreCadastro(input){
  const id=Utilities.getUuid(),row=s.getLastRow()+1;if(row>1000)return {ok:false,reason:"Limite da base."};if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
  s.getRange(row,1,1,12).setNumberFormat("@").setValues([[id,nome,contato,"",local,cidade,"",new Date().toISOString(),"Registro administrativo autorizado","","PENDENTE_IDENTIFICACAO",""]]);SpreadsheetApp.flush();return {ok:true,id};
  }catch(e){return {ok:false,reason:"Não foi possível confirmar o pré-cadastro. Confira a planilha."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
+}
+
+const REF_COORD_HEADERS_=["ID_REFERENCIA","ID_COORDENACAO","NOME_NA_FONTE","SETOR_NA_FONTE","FUNCAO_NA_FONTE","ORIGEM_TERRITORIAL","VIGENCIA_INFORMADA","FONTE","VALIDACAO","ID_PESSOA_VINCULADA"];
+const GRUPO_HEADERS_=["ID_GRUPO","ID_UNIDADE","NOME","OBJETIVO","STATUS","CRIADO_EM"];
+const MEMBRO_HEADERS_=["ID_MEMBRO","ID_GRUPO","ID_PESSOA","FUNCAO","STATUS","CRIADO_EM"];
+const ALERTA_HEADERS_=["ID_ALERTA","TIPO_DESTINO","ID_DESTINO","TITULO","MENSAGEM","PRIORIDADE","STATUS","CRIADO_EM","CANAL"];
+function textoOperacional_(v,max,obrigatorio=true){
+ if(typeof v!=="string")throw Error("Campo inválido.");
+ const s=v.trim();if((obrigatorio&&!s)||s.length>max||/^[=+\-@]|[\u0000-\u0008\u000b-\u001f\u007f]/.test(s))throw Error("Confira os campos.");
+ return s;
+}
+function unidadeRedeValida_(id,data){
+ return id==="CO"||[...data.dioceses,...data.paroquias,...data.comunidades].some(x=>x.id===id&&x.id!=="D13");
+}
+function appendOperacional_(ss,nome,headers,values){
+ tabela_(ss,nome,headers);
+ const s=ss.getSheetByName(nome),row=s.getLastRow()+1;
+ if(row>1000)throw Error("Limite da base inicial.");
+ if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
+ s.getRange(row,1,1,headers.length).setNumberFormat("@").setValues([values]);SpreadsheetApp.flush();
+}
+function operacaoRede_(handler){
+ const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
+ let lock;try{
+ lock=LockService.getScriptLock();if(!lock.tryLock(5000))return {ok:false,reason:"Tente novamente."};
+ const ss=SpreadsheetApp.openById(cfg.operacionalId);return handler(ss);
+ }catch(e){return {ok:false,reason:"Não foi possível confirmar a operação. Confira os campos e a base antes de repetir."};}
+ finally{if(lock&&lock.hasLock())lock.releaseLock();}
+}
+function consultarTrabalho(){
+ try{
+ const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
+ const ss=SpreadsheetApp.openById(cfg.operacionalId);
+ const grupos=tabela_(ss,"GRUPOS_TRABALHO",GRUPO_HEADERS_).map(r=>({id:r[0],unidade:r[1],nome:r[2],objetivo:r[3],status:r[4]}));
+ const pessoas=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(r=>r[9]==="CADASTRADO").map(r=>({id:r[0],nome:r[1],unidade:r[18]}));
+ const membros=tabela_(ss,"MEMBROS_GRUPOS",MEMBRO_HEADERS_).map(r=>({id:r[0],grupo:r[1],pessoa:r[2],funcao:r[3],status:r[4]}));
+ const alertas=tabela_(ss,"ALERTAS",ALERTA_HEADERS_).map(r=>({id:r[0],tipo:r[1],destino:r[2],titulo:r[3],mensagem:r[4],prioridade:r[5],status:r[6],data:r[7],canal:r[8]}));
+ return {ok:true,grupos,pessoas,membros,alertas};
+ }catch(e){return {ok:false,reason:"Estrutura de grupos e alertas indisponível."};}
+}
+function criarGrupoTrabalho(input){
+ if(!gestaoConfigAutorizada_())return {ok:false,reason:"Acesso negado."};
+ const t=consultarTerritorio();if(!t.ok)return t;
+ return operacaoRede_(ss=>{
+ const unidade=textoOperacional_(input?.unidade,100),nome=textoOperacional_(input?.nome,120),objetivo=textoOperacional_(input?.objetivo,500);
+ if(!unidadeRedeValida_(unidade,t.data))return {ok:false,reason:"Unidade não reconhecida."};
+ const rows=tabela_(ss,"GRUPOS_TRABALHO",GRUPO_HEADERS_);
+ if(rows.some(r=>r[1]===unidade&&normalizarChave_(r[2])===normalizarChave_(nome)&&r[4]!=="ARQUIVADO"))return {ok:false,reason:"Grupo já existente nesse território."};
+ const id=Utilities.getUuid();
+ appendOperacional_(ss,"GRUPOS_TRABALHO",GRUPO_HEADERS_,[id,unidade,nome,objetivo,"ATIVO",new Date().toISOString()]);
+ return {ok:true,id};
+ });
+}
+function adicionarMembroGrupo(input){
+ return operacaoRede_(ss=>{
+ const grupo=textoOperacional_(input?.grupo,100),pessoa=textoOperacional_(input?.pessoa,100),funcao=textoOperacional_(input?.funcao,80);
+ if(input?.autorizado!==true)return {ok:false,reason:"Confirme a participação autorizada da pessoa."};
+ const grupos=tabela_(ss,"GRUPOS_TRABALHO",GRUPO_HEADERS_),pessoas=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_),membros=tabela_(ss,"MEMBROS_GRUPOS",MEMBRO_HEADERS_);
+ if(!grupos.some(r=>r[0]===grupo&&r[4]==="ATIVO")||!pessoas.some(r=>r[0]===pessoa&&r[9]==="CADASTRADO"))return {ok:false,reason:"Grupo ou pessoa não disponível."};
+ if(membros.some(r=>r[1]===grupo&&r[2]===pessoa&&r[4]==="ATIVO"))return {ok:false,reason:"Pessoa já vinculada ao grupo."};
+ const id=Utilities.getUuid();appendOperacional_(ss,"MEMBROS_GRUPOS",MEMBRO_HEADERS_,[id,grupo,pessoa,funcao,"ATIVO",new Date().toISOString()]);return {ok:true,id};
+ });
+}
+function criarAlertaRede(input){
+ if(!gestaoConfigAutorizada_())return {ok:false,reason:"Acesso negado."};
+ const t=consultarTerritorio();if(!t.ok)return t;
+ return operacaoRede_(ss=>{
+ const tipo=textoOperacional_(input?.tipo,20),destino=textoOperacional_(input?.destino,100),titulo=textoOperacional_(input?.titulo,140),mensagem=textoOperacional_(input?.mensagem,1500),prioridade=textoOperacional_(input?.prioridade,20);
+ const grupos=tabela_(ss,"GRUPOS_TRABALHO",GRUPO_HEADERS_);
+ if(!["NORMAL","URGENTE"].includes(prioridade)||!(tipo==="TERRITORIO"?unidadeRedeValida_(destino,t.data):tipo==="GRUPO"&&grupos.some(r=>r[0]===destino&&r[4]==="ATIVO")))return {ok:false,reason:"Destino ou prioridade inválidos."};
+ const id=Utilities.getUuid();
+ appendOperacional_(ss,"ALERTAS",ALERTA_HEADERS_,[id,tipo,destino,titulo,mensagem,prioridade,"RASCUNHO",new Date().toISOString(),"MURAL_INTERNO"]);
+ return {ok:true,id};
+ });
+}
+function publicarAlertaRede(input){
+ return operacaoRede_(ss=>{
+ const id=textoOperacional_(input?.id,100);if(input?.confirmado!==true)return {ok:false,reason:"Confirme a publicação no mural interno."};
+ const rows=tabela_(ss,"ALERTAS",ALERTA_HEADERS_),r=rows.find(x=>x[0]===id);
+ if(!r||r[6]!=="RASCUNHO")return {ok:false,reason:"Alerta indisponível ou já publicado."};
+ const sheet=ss.getSheetByName("ALERTAS"),raw=sheet.getRange(2,1,sheet.getLastRow()-1,1).getDisplayValues(),i=raw.findIndex(x=>x[0]===id);
+ if(i<0)throw Error("Alerta não localizado.");
+ sheet.getRange(i+2,7).setValue("PUBLICADO_INTERNO");SpreadsheetApp.flush();
+ return {ok:true,id,entregas:0};
+ });
 }

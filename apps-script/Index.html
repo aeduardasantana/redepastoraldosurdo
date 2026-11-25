@@ -224,7 +224,8 @@ function atualizarVinculoPessoa(changed){
 for(const k of ["p-regional","p-diocese","p-paroquia"])T(k).addEventListener("change",()=>atualizarVinculoPessoa(k));
 T("p-nascimento").max=new Intl.DateTimeFormat("sv-SE",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 T("p-cep").addEventListener("input",()=>{const e=T("p-cep"),n=e.value.replace(/[^0-9]/g,"").slice(0,8);e.value=n.length>5?n.slice(0,5)+"-"+n.slice(5):n;});
-T("pessoa-form").addEventListener("reset",()=>{T("p-id").value="";T("p-revisao").value="";T("p-ficha-titulo").textContent="Ficha de cadastro";setTimeout(()=>atualizarVinculoPessoa("p-regional"),0);});
+for(const k of ["p-telefone","p-nome","p-preferido","p-canal"])T(k).addEventListener("input",()=>T("p-contato-acoes").replaceChildren());
+T("pessoa-form").addEventListener("reset",()=>{T("p-contato-acoes").replaceChildren();T("p-id").value="";T("p-revisao").value="";T("p-ficha-titulo").textContent="Ficha de cadastro";setTimeout(()=>atualizarVinculoPessoa("p-regional"),0);});
 T("pessoa-form").addEventListener("submit",e=>{
  e.preventDefault();if(!territorial)return;
  const b=T("p-save");b.disabled=true;const v=k=>T("p-"+k).value;

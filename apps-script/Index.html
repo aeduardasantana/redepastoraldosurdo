@@ -233,7 +233,7 @@ function paginaValida(id){return PAGINAS.includes(id)?id:"home";}
 function atualizarHome(){
  if(!territorial)return;const p=T("home-metrics");p.replaceChildren();
  const ids=new Set(territorial.dioceses.map(x=>x.id));
- const totals=[["Jurisdições",territorial.dioceses.length],["Unidades paroquiais",territorial.paroquias.length],["Comunidades",territorial.comunidades.length],["Locais com pastoral ativa",locaisPastoraisAtivas(territorial,ids,"","","").length],["Pastorais cadastradas",(territorial.pastorais||[]).length],["Programações cadastradas",territorial.missas.length],["Horários recorrentes / confirmados",filtrarAcessibilidade(territorial.missas,"fixo").length]];
+ const totals=[["Jurisdições",territorial.dioceses.length],["Unidades paroquiais",territorial.paroquias.length],["Comunidades",territorial.comunidades.length],["Locais com pastoral ativa",locaisPastoraisAtivas(territorial,ids,"","","").length],["Coordenações pastorais cadastradas",(territorial.pastorais||[]).length],["Programações cadastradas",territorial.missas.length],["Horários recorrentes / confirmados",filtrarAcessibilidade(territorial.missas,"fixo").length]];
  for(const [label,value] of totals){const box=document.createElement("div");box.className="home-stat";add(box,"strong",String(value));add(box,"span",label);p.append(box);}
  T("home-status").textContent="Indicadores atualizados.";desenharTabelaTerritorial();
 }

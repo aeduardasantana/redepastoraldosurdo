@@ -153,7 +153,7 @@ test("gravação de ficha parcial e complementação mantêm o mesmo ID, com con
  const tab={getLastRow:()=>rows.length,getMaxRows:()=>200,getRange:(row,col,n,width)=>({getDisplayValues:()=>rows.slice(row-1,row-1+n).map(r=>r.slice(col-1,col-1+width)),setNumberFormat:()=>({setValues:v=>{rows[row-1]=v[0];}})})};
  context.Session={getActiveUser:()=>({getEmail:()=>"owner@example.test"})};context.territorialConfig_=()=>({owner:"owner@example.test",sourceId:"test"});context.gestaoConfig_=()=>({operacionalId:"test",questionarioId:"test"});const original=context.consultarTerritorio;
  context.consultarTerritorio=()=>({ok:true,data:fixture});const linkTables={VINCULOS_TERRITORIAIS:"VINC_PESSOA_HEADERS_",MEMBROS_PASTORAIS:"MEMBROS_PASTORAIS_HEADERS_",COMPOSICAO_REFERENCIAS:"REF_COORD_HEADERS_"};context.SpreadsheetApp={openById:()=>({getSheetByName:name=>name==="PESSOAS"?tab:{getLastRow:()=>1,getRange:()=>({getDisplayValues:()=>[Array.from(vm.runInContext(linkTables[name],context))]})}}),flush:()=>{}};context.Utilities={getUuid:()=>"TEST-PARTIAL",formatDate:()=>"2026-11-25"};context.LockService={getScriptLock:()=>({tryLock:()=>{locked=true;return true;},hasLock:()=>locked,releaseLock:()=>{locked=false;}})};
- try{const p={...pessoa,nascimento:"",cidade:"",uf:"",pais:""};const first=context.salvarCadastroBasico(p);assert.equal(first.status,"PARCIAL");assert.equal(rows.length,2);const detail=context.consultarFichaPessoa(first.id);assert.equal(detail.ok,true);assert.equal(detail.pessoa.id,first.id);assert.equal(context.salvarCadastroBasico({...p,id:first.id,revisao:"invalid"}).ok,false);const updated=context.salvarCadastroBasico({...p,nascimento:"1990-03-04",id:first.id,revisao:detail.pessoa.revisao});assert.equal(updated.status,"CADASTRADO");assert.equal(updated.id,first.id);assert.equal(rows.length,2);
+ try{const p={...pessoa,nascimento:"",cidade:"",uf:"",pais:""};const first=context.salvarCadastroBasico(p);assert.equal(first.status,"CADASTRADO");assert.equal(rows.length,2);const detail=context.consultarFichaPessoa(first.id);assert.equal(detail.ok,true);assert.equal(detail.pessoa.id,first.id);assert.equal(context.salvarCadastroBasico({...p,id:first.id,revisao:"invalid"}).ok,false);const updated=context.salvarCadastroBasico({...p,nascimento:"1990-03-04",id:first.id,revisao:detail.pessoa.revisao});assert.equal(updated.status,"CADASTRADO");assert.equal(updated.id,first.id);assert.equal(rows.length,2);
  }finally{context.consultarTerritorio=original;}
 });
 
@@ -172,3 +172,17 @@ test("visitante recebe somente regimento e não consulta base privada",()=>{cont
 
 test("vínculos de pessoa usam o mesmo ID em tabelas distintas",()=>{const data={VINCULOS_TERRITORIAIS:[Array.from(vm.runInContext("VINC_PESSOA_HEADERS_",context)),["V1","P1","U1","VINCULO_PASTORAL","","","","ATIVO","","Coordenação","Ouvinte"],["V2","P1","U2","VINCULO_PASTORAL","","","","ENCERRADO","","",""]],MEMBROS_PASTORAIS:[Array.from(vm.runInContext("MEMBROS_PASTORAIS_HEADERS_",context)),["M1","P1","PAS1","Membro","Ouvinte","","","ATIVO",""]],COMPOSICAO_REFERENCIAS:[Array.from(vm.runInContext("REF_COORD_HEADERS_",context)),["R1","E1","Pessoa Teste","Ouvinte","Secretaria","","2026–2027","","","P1"]]};const ss={getSheetByName:name=>({getLastRow:()=>data[name].length,getRange:()=>({getDisplayValues:()=>data[name]})})};const rows=context.vinculosPessoas_(ss);assert.equal(rows.length,3);assert.equal(rows.every(x=>x.pessoa==="P1"),true);assert.equal(rows.some(x=>x.tipo==="Coordenação"),true);});
 test("fluxo legado não cria pessoa paralela",()=>{assert.equal(context.salvarPreCadastro({}).ok,false);assert.equal(context.arquivarPreCadastro("X").ok,false);});
+
+test("ficha única permite dados opcionais vazios, valida datas e exige autorização específica",()=>{
+ const schema=vm.runInContext("CAMPOS_FICHA_UNICA_",context),old=Array(23+schema.length+5).fill("");
+ assert.equal(context.validarCamposFichaUnica_({},old,"2026-11-25").values.DATA_BATISMO,"");
+ assert.throws(()=>context.validarCamposFichaUnica_({camposFicha:{DATA_BATISMO:"2000-05-01"}},old,"2026-11-25"));
+ const v=context.validarCamposFichaUnica_({camposFicha:{DATA_BATISMO:"2000-05-01",P14:"Sim"},autorizacaoOpcionais:true},old,"2026-11-25");
+ assert.equal(v.values.DATA_BATISMO,"2000-05-01");assert.equal(v.values.P14,"Sim");
+ assert.throws(()=>context.validarCamposFichaUnica_({camposFicha:{DATA_BATISMO:"2027-01-01"},autorizacaoOpcionais:true},old,"2026-11-25"));
+ assert.throws(()=>context.validarCamposFichaUnica_({camposFicha:{P27:"2000-01-01"},autorizacaoOpcionais:true},old,"2026-11-25"));
+ const i=schema.findIndex(f=>f.id==="DATA_BATISMO");old[23+i]="2000-05-01";assert.equal(context.validarCamposFichaUnica_({},old,"2026-11-25").values.DATA_BATISMO,"2000-05-01");
+ assert.equal(context.coberturaFichaUnica_(old),1);
+});
+test("metadados de origem distinguem importação e edição",()=>{const row=Array(23).fill("");row[21]="IMPORTACAO_PRE_CADASTROS";assert.equal(context.metadadosFichaUnica_(row).origem,"ACAO_SISTEMICA");});
+test("formulário único contém sacramentos editáveis e biblioteca tem filtros",()=>{assert.match(navHtml,/id="p-campos-unicos"/);assert.match(navHtml,/DATA_BATISMO/);assert.match(navHtml,/camposFicha:lerCamposFichaUnica/);assert.match(navHtml,/id="docs-categoria"/);assert.match(navHtml,/id="docs-mandato"/);assert.match(navHtml,/id="docs-situacao"/);});

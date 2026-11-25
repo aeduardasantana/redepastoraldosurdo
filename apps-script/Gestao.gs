@@ -17,7 +17,7 @@ function validarEquipeRascunho_(input,data,existentes){
  return {nivel,unidade,nome,fonte,tipo:nivel==="PAROQUIAL_REPRESENTANTE"?"REPRESENTACAO":"COORDENACAO"};
 }
 
-const DOCUMENTOS_HEADERS_=["ID_DOCUMENTO","TITULO","CATEGORIA","URL","VISIBILIDADE","STATUS","ORDEM"];
+const DOCUMENTOS_HEADERS_=["ID_DOCUMENTO","TITULO","CATEGORIA","URL","VISIBILIDADE","STATUS","ORDEM","ANO","MANDATO","SITUACAO_DOCUMENTAL"];
 const DOCS_ACESSOS_HEADERS_=["ID_ACESSO","ID_PESSOA","IDENTIDADE_GOOGLE","ID_UNIDADE","PERFIL_AUTORIZADO","INICIO_VIGENCIA","FIM_VIGENCIA","STATUS","APROVADO_POR_ID","APROVADO_EM","REVOGADO_EM"];
 const DOCS_COMPOSICAO_HEADERS_=["ID_COMPOSICAO","ID_COORDENACAO","ID_PESSOA","CARGO_FUNCAO","INICIO_VIGENCIA","FIM_VIGENCIA","STATUS","ATO_INDICACAO","DATA_RATIFICACAO","ENCERRADO_EM","MOTIVO_ADMINISTRATIVO_CODIFICADO"];
 function membroRegionalDocumentos_(email,acessos,composicao,equipes,hoje){
@@ -37,7 +37,7 @@ function consultarDocumentos(){
   const ss=SpreadsheetApp.openById(cfg.operacionalId);
   const admin=!!autorizacaoTerritorial_();
   if(!admin&&!membroRegionalDocumentos_(email,tabela_(ss,"ACESSOS",DOCS_ACESSOS_HEADERS_),tabela_(ss,"COMPOSICAO",DOCS_COMPOSICAO_HEADERS_),tabela_(ss,"COORDENACOES",COORD_HEADERS_),Utilities.formatDate(new Date(),"America/Sao_Paulo","yyyy-MM-dd")))return denied;
-  const docs=tabela_(ss,"DOCUMENTOS",DOCUMENTOS_HEADERS_).filter(r=>r[4]==="COORDENACAO_REGIONAL"&&r[5]==="ATIVO"&&r[0]&&r[1]&&/^https:\/\/(?:docs\.google\.com\/(?:document|spreadsheets|presentation)\/d\/[A-Za-z0-9_-]+\/(?:edit|view)|drive\.google\.com\/file\/d\/[A-Za-z0-9_-]+\/view)$/.test(r[3])).sort((a,b)=>(Number(a[6])||0)-(Number(b[6])||0)).map(r=>({id:r[0],titulo:r[1],categoria:r[2],url:r[3]}));
+  const docs=tabela_(ss,"DOCUMENTOS",DOCUMENTOS_HEADERS_).filter(r=>r[4]==="COORDENACAO_REGIONAL"&&r[5]==="ATIVO"&&r[0]&&r[1]&&/^https:\/\/(?:docs\.google\.com\/(?:document|spreadsheets|presentation)\/d\/[A-Za-z0-9_-]+\/(?:edit|view)|drive\.google\.com\/file\/d\/[A-Za-z0-9_-]+\/view)$/.test(r[3])).sort((a,b)=>(Number(a[6])||0)-(Number(b[6])||0)).map(r=>({id:r[0],titulo:r[1],categoria:r[2],url:r[3],ano:r[7],mandato:r[8],situacao:r[9]}));
   return {ok:true,publico,regional:true,restritos:docs};
  }catch(e){return denied;}
 }
@@ -110,7 +110,7 @@ function validarCadastroBasico_(input,data,hoje){
 
  if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error("E-mail inválido.");
  if(telefone&&!/^[0-9 ()-]{8,25}$/.test(telefone))throw Error("Telefone inválido.");
- if(!["","EMAIL","WHATSAPP","SEM_CONTATO"].includes(canal))throw Error("Confira o canal de contato.");
+ if(!["","EMAIL","WHATSAPP","OUTRO","SEM_CONTATO"].includes(canal))throw Error("Confira o canal de contato.");
  if(unidade&&unidade!=="CO"&&![...data.dioceses,...data.paroquias,...data.comunidades,...(data.locais||[]).filter(x=>!x.unidade)].some(x=>x.id===unidade))throw Error("Unidade de vínculo não reconhecida.");
  const cpf=input.cpf==null?"":normalizarCpf_(input.cpf);if(![nome,preferido,email,telefone,cpf].some(Boolean))throw Error("Informe ao menos uma referência de identificação ou contato.");return {nome,preferido,nascimento,cidade,uf,email,telefone,canal,pais,cep,bairro,logradouro,numero,complemento,unidade,cpf};
 }

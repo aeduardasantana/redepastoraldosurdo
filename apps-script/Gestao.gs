@@ -42,6 +42,51 @@ function consultarDocumentos(){
  }catch(e){return denied;}
 }
 
+
+const COMPOSICAO_GESTAO_HEADERS_=[...DOCS_COMPOSICAO_HEADERS_,"SETOR","MANDATO_INFORMADO","PROVIMENTO","ORIGEM_REGISTRO","ATUALIZADO_EM","ATUALIZADO_POR"];
+function setorCargo_(s){return ({Surdos:"Surdo",Ouvintes:"Ouvinte"}[s]||s||"");}
+function chaveCargo_(cargo,setor){return normalizarChave_(String(cargo||"")).replace(/\b(coordenadora|secretaria|tesoureira|assessora)\b/g,w=>({coordenadora:"coordenador",secretaria:"secretario",tesoureira:"tesoureiro",assessora:"assessor"}[w])).replace(/[- ]+/g," ")+"|"+normalizarChave_(setorCargo_(setor));}
+function opcoesCargosEquipe_(equipe,equipes,refs,comp){
+ const e=equipes.find(r=>r[0]===equipe);if(!e)return [];
+ const same=new Set(equipes.filter(r=>r[3]===e[3]).map(r=>r[0]));
+ const rows=[...refs.filter(r=>same.has(r[1])&&!/institui[cç][aã]o/i.test(r[4])).map(r=>[r[4],setorCargo_(r[3])]),...comp.filter(r=>r[1]===equipe).map(r=>[r[3],r[11]])];
+ if(e[3]==="REGIONAL")rows.push(["Assistente Episcopal","Assessoria eclesiástica"]);
+ if(e[3]==="PAROQUIAL_REPRESENTANTE")rows.push(["Representante paroquial",""]);
+ const m=new Map();for(const [cargo,setor] of rows){if(cargo){const id=chaveCargo_(cargo,setor);if(!m.has(id))m.set(id,{id,cargo,setor,nome:[cargo,setor].filter(Boolean).join(" · ")});}}return [...m.values()];
+}
+function situacaoCargo_(r,hoje){if(r[6]==="ENCERRADO"||r[9])return "Encerrado";if(r[4]&&r[4]>hoje)return "Futuro";if(r[5]&&r[5]<hoje)return "Encerrado";return "Em exercício";}
+function validarPeriodoCargo_(ini,fim,ratificacao){const dt=s=>!s||/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s+"T00:00:00Z"))&&new Date(s+"T00:00:00Z").toISOString().slice(0,10)===s;return [ini,fim,ratificacao].every(dt)&&(!ini||!fim||ini<=fim);}
+function lerComposicaoGestao_(ss){return tabela_(ss,"COMPOSICAO",COMPOSICAO_GESTAO_HEADERS_);}
+function salvarCargoPessoa(input){
+ return operacaoRede_(ss=>{
+ const equipe=String(input?.equipe||""),pessoa=String(input?.pessoa||""),id=String(input?.id||"");
+ const equipes=tabela_(ss,"COORDENACOES",COORD_HEADERS_),refs=tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_),comp=lerComposicaoGestao_(ss),old=id?comp.find(r=>r[0]===id):null;
+ if(id&&(!old||old[6]!=="ATIVO"||old[9]||old[15]!==String(input.revisao||"")))return {ok:false,reason:"Registro alterado ou encerrado. Atualize a consulta."};
+ if(old&&(old[1]!==equipe||old[2]!==pessoa))return {ok:false,reason:"Para substituir um titular, encerre o cargo anterior e registre o novo."};
+ const eq=equipes.find(r=>r[0]===equipe);if(!eq||["ARQUIVADA","RASCUNHO"].includes(eq[5]))return {ok:false,reason:"Selecione uma coordenação constituída."};
+ if(!tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).some(r=>r[0]===pessoa&&["CADASTRADO","PARCIAL"].includes(r[9])))return {ok:false,reason:"Selecione uma pessoa cadastrada."};
+ const opt=opcoesCargosEquipe_(equipe,equipes,refs,comp).find(r=>r.id===input.cargo);if(!opt)return {ok:false,reason:"Selecione um cargo da lista."};
+ if(old&&chaveCargo_(old[3],old[11])!==opt.id)return {ok:false,reason:"Para mudar o cargo, encerre o vínculo anterior e registre outro."};
+ const ini=String(input.inicio||""),fim=String(input.fim||""),rat=String(input.ratificacao||""),mandato=String(input.mandato||"").trim(),prov=String(input.provimento||""),ato=String(input.ato||"").trim();
+ if(!validarPeriodoCargo_(ini,fim,rat)||mandato.length>80||ato.length>500||/^[=+\-@]|[\u0000-\u001f]/.test(mandato)||/^[=+\-@]|[\u0000-\u001f]/.test(ato)||!["","Eleição","Indicação","Designação","Outro"].includes(prov))return {ok:false,reason:"Confira o período e o provimento."};
+ if(!old&&input.confirmado!==true)return {ok:false,reason:"Confirme que o exercício do cargo foi autorizado pela instância competente."};
+ const ids=new Set(comp.map(r=>r[0]));
+ if(!old&&refs.some(r=>r[1]===equipe&&!ids.has(r[0])&&chaveCargo_(r[4],r[3])===opt.id))return {ok:false,reason:"Há um cargo já registrado nesta composição. Vincule o titular existente antes de criar outro."};
+ const overlap=r=>(!fim||!r[4]||r[4]<=fim)&&(!ini||!r[5]||r[5]>=ini);
+ if(comp.some(r=>r[0]!==id&&r[1]===equipe&&r[6]==="ATIVO"&&!r[9]&&chaveCargo_(r[3],r[11])===opt.id&&overlap(r)))return {ok:false,reason:"Este cargo já possui titular em período coincidente."};
+ const now=new Date().toISOString(),actor=normalizarEmail_(Session.getActiveUser().getEmail()),key=old?id:Utilities.getUuid(),row=[key,equipe,pessoa,old?old[3]:opt.cargo,ini,fim,"ATIVO",ato,rat,"","",old?old[11]:opt.setor,mandato,prov,old?old[14]:"MANUAL_USUARIO",now,actor];
+ if(old){const sh=ss.getSheetByName("COMPOSICAO"),rows=sh.getRange(1,1,sh.getLastRow(),COMPOSICAO_GESTAO_HEADERS_.length).getDisplayValues(),index=rows.findIndex(r=>r[0]===id);if(index<1)return {ok:false,reason:"Cargo indisponível."};sh.getRange(index+1,1,1,row.length).setNumberFormat("@").setValues([row]);SpreadsheetApp.flush();}else appendOperacional_(ss,"COMPOSICAO",COMPOSICAO_GESTAO_HEADERS_,row);
+ return {ok:true,id:key};
+ });
+}
+function encerrarCargoPessoa(id,revisao,motivo){
+ return operacaoRede_(ss=>{const comp=lerComposicaoGestao_(ss),r=comp.find(x=>x[0]===id);if(!r||r[6]!=="ATIVO"||r[9]||r[15]!==String(revisao||""))return {ok:false,reason:"Cargo alterado ou indisponível."};
+ if(!["Término de mandato","Renúncia","Substituição","Outro"].includes(motivo))return {ok:false,reason:"Selecione um motivo de encerramento."};
+ const sh=ss.getSheetByName("COMPOSICAO"),rows=sh.getRange(1,1,sh.getLastRow(),COMPOSICAO_GESTAO_HEADERS_.length).getDisplayValues(),i=rows.findIndex(x=>x[0]===id);if(i<1)return {ok:false,reason:"Cargo indisponível."};
+ const now=new Date().toISOString();r[6]="ENCERRADO";r[9]=now;r[10]=motivo;r[15]=now;r[16]=normalizarEmail_(Session.getActiveUser().getEmail());sh.getRange(i+1,1,1,r.length).setNumberFormat("@").setValues([r]);SpreadsheetApp.flush();return {ok:true};
+ });
+}
+
 function consultarGestao(){
  try{
  const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
@@ -49,8 +94,8 @@ function consultarGestao(){
  const equipes=tabela_(ss,"COORDENACOES",COORD_HEADERS_).map(r=>({id:r[0],unidade:r[1],nome:r[2],nivel:r[3],tipo:r[4],status:r[5],fonte:r[7],validacao:r[8]}));
  const q=tabela_(SpreadsheetApp.openById(cfg.questionarioId),"PERGUNTAS",QUEST_HEADERS_).map(r=>({id:r[0],bloco:r[1],pergunta:r[2],tipo:r[3],opcoes:r[4],regra:r[5]}));
  const cargos=tabela_(ss,"CARGOS_REGIMENTAIS",["NIVEL_REFERENCIA","CARGO","ORIGEM","PROVIMENTO","OBSERVACAO"]).map(r=>({nivel:r[0],cargo:r[1],origem:r[2],provimento:r[3],obs:r[4]}));
- const pessoas=new Map(tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(r=>["CADASTRADO","PARCIAL"].includes(r[9])).map(r=>[r[0],r]));const referencias=tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_).map(r=>{const p=pessoas.get(r[9]);return {id:r[0],equipe:r[1],nome:p?.[1]||r[2],pessoa:p?.[0]||"",telefone:p&&p[8]!=="SEM_CONTATO"?p[7]:"",preferido:p?.[2]||"",setor:r[3],funcao:r[4],origem:r[5],vigencia:r[6],vinculado:!!p,instituicao:/institui[cç][aã]o/i.test(r[4])};});
- return {ok:true,equipes,questionario:q,cargos,referencias};
+ const pessoas=new Map(tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(r=>["CADASTRADO","PARCIAL"].includes(r[9])).map(r=>[r[0],r]));const comp=lerComposicaoGestao_(ss),refRows=tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_),ids=new Set(comp.map(r=>r[0])),hoje=Utilities.formatDate(new Date(),"America/Sao_Paulo","yyyy-MM-dd");const referencias=refRows.filter(r=>!ids.has(r[0])).map(r=>{const p=pessoas.get(r[9]);return {id:r[0],equipe:r[1],nome:p?.[1]||r[2],pessoa:p?.[0]||"",telefone:p&&p[8]!=="SEM_CONTATO"?p[7]:"",preferido:p?.[2]||"",setor:r[3],funcao:r[4],origem:r[5],vigencia:r[6],vinculado:!!p,instituicao:/institui[cç][aã]o/i.test(r[4])};});
+ const composicao=comp.map(r=>{const p=pessoas.get(r[2]);return {id:r[0],equipe:r[1],pessoa:r[2],nome:p?.[1]||p?.[2]||"Pessoa cadastrada",telefone:p&&p[8]!=="SEM_CONTATO"?p[7]:"",preferido:p?.[2]||"",setor:r[11],funcao:r[3],vigencia:r[12],inicio:r[4],fim:r[5],ratificacao:r[8],provimento:r[13],ato:r[7],status:r[6],situacao:situacaoCargo_(r,hoje),revisao:r[15],encerradoEm:r[9],motivo:r[10],vinculado:true};});const eqRows=tabela_(ss,"COORDENACOES",COORD_HEADERS_);const opcoes=Object.fromEntries(eqRows.map(r=>[r[0],opcoesCargosEquipe_(r[0],eqRows,refRows,comp)]));return {ok:true,equipes,questionario:q,cargos,referencias,composicao,opcoes};
  }catch(e){return {ok:false,reason:"Estrutura de gestão indisponível."};}
 }
 function criarCoordenacaoRascunho(input){
@@ -292,8 +337,7 @@ const MEMBROS_PASTORAIS_HEADERS_=["ID vínculo pastoral","ID pessoa","ID pastora
 function vinculosPessoas_(ss){
  const territoriais=tabela_(ss,"VINCULOS_TERRITORIAIS",VINC_PESSOA_HEADERS_).filter(r=>r[7]==="ATIVO").map(r=>({id:r[0],pessoa:r[1],destino:r[2],tipo:"Território",cargo:r[9],setor:r[10]}));
  const pastorais=tabela_(ss,"MEMBROS_PASTORAIS",MEMBROS_PASTORAIS_HEADERS_).filter(r=>r[7]==="ATIVO").map(r=>({id:r[0],pessoa:r[1],destino:r[2],tipo:"Pastoral",cargo:r[3],setor:r[4]}));
- const refs=tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_).filter(r=>r[9]).map(r=>({id:r[0],pessoa:r[9],destino:r[1],tipo:"Coordenação",cargo:r[4],setor:r[3],vigencia:r[6]}));
- return [...territoriais,...pastorais,...refs];
+ const comp=lerComposicaoGestao_(ss),ids=new Set(comp.map(r=>r[0])),hoje=Utilities.formatDate(new Date(),"America/Sao_Paulo","yyyy-MM-dd");const refs=tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_).filter(r=>r[9]&&!ids.has(r[0])).map(r=>({id:r[0],pessoa:r[9],destino:r[1],tipo:"Coordenação",cargo:r[4],setor:r[3],vigencia:r[6]}));const cargos=comp.map(r=>({id:r[0],pessoa:r[2],destino:r[1],tipo:"Coordenação",cargo:r[3],setor:r[11],vigencia:r[12],inicio:r[4],fim:r[5],situacao:situacaoCargo_(r,hoje)}));return [...territoriais,...pastorais,...refs,...cargos];
 }
 function salvarVinculoPessoa(input){
  const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};const t=consultarTerritorio();if(!t.ok)return t;
@@ -315,7 +359,7 @@ function encerrarVinculoPessoa(pessoa,tipo,id){
  return operacaoRede_(ss=>{const defs={"Território":["VINCULOS_TERRITORIAIS",VINC_PESSOA_HEADERS_],"Pastoral":["MEMBROS_PASTORAIS",MEMBROS_PASTORAIS_HEADERS_]};if(!Object.prototype.hasOwnProperty.call(defs,tipo))return {ok:false,reason:"Gerencie este vínculo em Coordenações."};const [aba,h]=defs[tipo];tabela_(ss,aba,h);const sh=ss.getSheetByName(aba),rows=sh.getRange(1,1,sh.getLastRow(),h.length).getDisplayValues(),i=rows.findIndex((r,j)=>j>0&&r[0]===id&&r[1]===pessoa&&r[7]==="ATIVO");if(i<1)return {ok:false,reason:"Vínculo indisponível."};sh.getRange(i+1,8).setValue("ENCERRADO");SpreadsheetApp.flush();return {ok:true};});
 }
 function vincularReferenciaCoordenacao(ref,pessoa){
- return operacaoRede_(ss=>{if(!tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).some(r=>r[0]===pessoa&&["CADASTRADO","PARCIAL"].includes(r[9])))return {ok:false,reason:"Pessoa indisponível."};tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_);const sh=ss.getSheetByName("COMPOSICAO_REFERENCIAS"),rows=sh.getRange(1,1,sh.getLastRow(),10).getDisplayValues(),i=rows.findIndex((r,j)=>j>0&&r[0]===ref);if(i<1||rows[i][9])return {ok:false,reason:"Referência já vinculada ou indisponível."};if(/institui[cç][aã]o/i.test(rows[i][4]))return {ok:false,reason:"Referência institucional."};sh.getRange(i+1,10).setValue(pessoa);SpreadsheetApp.flush();return {ok:true};});
+ return operacaoRede_(ss=>{if(!tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).some(r=>r[0]===pessoa&&["CADASTRADO","PARCIAL"].includes(r[9])))return {ok:false,reason:"Pessoa indisponível."};tabela_(ss,"COMPOSICAO_REFERENCIAS",REF_COORD_HEADERS_);const sh=ss.getSheetByName("COMPOSICAO_REFERENCIAS"),rows=sh.getRange(1,1,sh.getLastRow(),10).getDisplayValues(),i=rows.findIndex((r,j)=>j>0&&r[0]===ref);if(i<1||rows[i][9])return {ok:false,reason:"Referência já vinculada ou indisponível."};if(/institui[cç][aã]o/i.test(rows[i][4]))return {ok:false,reason:"Referência institucional."};const r=rows[i],comp=lerComposicaoGestao_(ss);if(comp.some(x=>x[0]===ref))return {ok:false,reason:"Cargo já associado."};appendOperacional_(ss,"COMPOSICAO",COMPOSICAO_GESTAO_HEADERS_,[r[0],r[1],pessoa,r[4],"","","ATIVO","","","","",setorCargo_(r[3]),r[6],"","VINCULACAO_REFERENCIA",new Date().toISOString(),normalizarEmail_(Session.getActiveUser().getEmail())]);sh.getRange(i+1,10).setValue(pessoa);SpreadsheetApp.flush();return {ok:true};});
 }
 
 function consultarPessoasPorLocal(){

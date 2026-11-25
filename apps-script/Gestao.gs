@@ -43,3 +43,48 @@ function criarCoordenacaoRascunho(input){
  return {ok:true,id};
  }catch(e){return {ok:false,reason:"Não foi possível registrar o rascunho."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
 }
+
+const PESSOAS_HEADERS_=["ID_PESSOA","NOME_COMPLETO","NOME_PREFERIDO","DATA_NASCIMENTO","MUNICIPIO_RA","UF","EMAIL","TELEFONE_WHATSAPP","CANAL_CONTATO","STATUS_CADASTRO","CRIADO_EM","ATUALIZADO_EM","PAIS","CEP","BAIRRO","LOGRADOURO","NUMERO","COMPLEMENTO","ID_UNIDADE_VINCULO_INICIAL","AUTORIZACAO_CADASTRO_EM","VERSAO_AVISO","ORIGEM_AUTORIZACAO"];
+function validarCadastroBasico_(input,data,hoje){
+ const clean=(v,max,required=false)=>{if(typeof v!=="string")throw Error("Campo inválido.");const s=v.trim();if((required&&!s)||s.length>max||/^[=+\-@]|[\u0000-\u001f\u007f]/.test(s))throw Error("Confira os campos de cadastro.");return s;};
+ if(!input||typeof input!=="object"||input.autorizado!==true)throw Error("É necessário confirmar autorização institucional e da pessoa para o cadastro.");
+ const nome=clean(input.nome,180,true),preferido=clean(input.preferido,100),nascimento=clean(input.nascimento,10,true),cidade=clean(input.cidade,120,true),uf=clean(input.uf,2,true),email=clean(input.email,180),telefone=clean(input.telefone,25),canal=clean(input.canal,20),pais=clean(input.pais,80,true),cep=clean(input.cep,9),bairro=clean(input.bairro,120),logradouro=clean(input.logradouro,250),numero=clean(input.numero,30),complemento=clean(input.complemento,150),unidade=clean(input.unidade,100);
+ const d=new Date(nascimento+"T00:00:00Z");
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(nascimento)||Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==nascimento||nascimento>hoje||nascimento<"1900-01-01")throw Error("Data de nascimento inválida.");
+ let idade=Number(hoje.slice(0,4))-Number(nascimento.slice(0,4));if(hoje.slice(5)<nascimento.slice(5))idade--;
+ if(idade<18)throw Error("O fluxo de cadastro de menores ainda não está habilitado.");
+ if(pais!=="Brasil"||!["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"].includes(uf))throw Error("Nesta etapa, informe endereço brasileiro e UF válida.");
+ if(cep&&!/^\d{5}-?\d{3}$/.test(cep))throw Error("CEP inválido.");
+ if([cep,bairro,logradouro,numero,complemento].some(Boolean)&&![cep,bairro,logradouro,numero].every(Boolean))throw Error("Complete CEP, bairro, logradouro e número (ou s/n), ou deixe o endereço detalhado em branco.");
+ if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error("E-mail inválido.");
+ if(telefone&&!/^[0-9 ()-]{8,25}$/.test(telefone))throw Error("Telefone inválido.");
+ if(!["","EMAIL","WHATSAPP","SEM_CONTATO"].includes(canal)||(canal==="EMAIL"&&!email)||(canal==="WHATSAPP"&&!telefone))throw Error("Confira o canal de contato.");
+ if(unidade&&unidade!=="CO"&&![...data.dioceses,...data.paroquias,...data.comunidades].some(x=>x.id===unidade))throw Error("Unidade de vínculo não reconhecida.");
+ return {nome,preferido,nascimento,cidade,uf,email,telefone,canal,pais,cep,bairro,logradouro,numero,complemento,unidade};
+}
+function salvarCadastroBasico(input){
+ const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
+ const t=consultarTerritorio();if(!t.ok)return t;
+ let v;try{v=validarCadastroBasico_(input,t.data,Utilities.formatDate(new Date(),"America/Sao_Paulo","yyyy-MM-dd"));}catch(e){return {ok:false,reason:e.message};}
+ let lock;try{
+ lock=LockService.getScriptLock();if(!lock.tryLock(5000))return {ok:false,reason:"Outra operação em andamento. Tente novamente."};
+ const ss=SpreadsheetApp.openById(cfg.operacionalId),s=ss.getSheetByName("PESSOAS");
+ const rows=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_);
+ if(rows.some(r=>normalizarChave_(r[1])===normalizarChave_(v.nome)&&r[3]===v.nascimento))return {ok:false,reason:"Possível cadastro existente com mesmo nome e nascimento. Solicite revisão antes de cadastrar novamente."};
+ const id=Utilities.getUuid(),now=new Date().toISOString(),row=s.getLastRow()+1;
+ if(row>1000)return {ok:false,reason:"Limite do cadastro inicial."};
+ if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
+ const values=[id,v.nome,v.preferido,v.nascimento,v.cidade,v.uf,v.email,v.telefone,v.canal,"CADASTRADO",now,now,v.pais,v.cep,v.bairro,v.logradouro,v.numero,v.complemento,v.unidade,now,"CAD-BASICO-0.10","DECLARACAO_DO_OPERADOR"];
+ s.getRange(row,1,1,values.length).setNumberFormat("@").setValues([values]);SpreadsheetApp.flush();
+ return {ok:true,id};
+ }catch(e){return {ok:false,reason:"Não foi possível confirmar a gravação. Confira a planilha antes de tentar novamente."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
+}
+function consultarResumoCadastro(){
+ try{
+ const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
+ const ss=SpreadsheetApp.openById(cfg.operacionalId),r=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(x=>x[9]==="CADASTRADO");
+ const unidades=Object.create(null);for(const x of r){const key=x[18]||"SEM_VINCULO";unidades[key]=(unidades[key]||0)+1;}
+ const equipes=tabela_(ss,"COORDENACOES",COORD_HEADERS_).filter(x=>x[5]!=="ARQUIVADA");
+ return {ok:true,total:r.length,unidades:Object.entries(unidades).map(([id,total])=>({id,total})),equipes:equipes.length,rascunhos:equipes.filter(x=>x[5]==="RASCUNHO").length};
+ }catch(e){return {ok:false,reason:"Indicadores de cadastro indisponíveis."};}
+}

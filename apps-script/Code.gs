@@ -70,7 +70,7 @@ function dadosPermitidos_(email,units,access,records,date){
   if(!allowed.size)return {ok:false};
   return {ok:true,units:units.filter(u=>allowed.has(u[0])).map(u=>({id:u[0],name:u[3],type:u[2]})),records:records.filter(r=>allowed.has(r[1])).map(r=>({id:r[0],unit:r[1],title:r[2],description:r[3]}))};
 }
-function consultarPainel(){
+function consultarPainelTeste_(){
   // Não aceitar e-mail, unidade ou papel do cliente. Identidade sempre obtida do servidor.
   try{
     const email=normalizarEmail_(Session.getActiveUser().getEmail());

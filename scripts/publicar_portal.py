@@ -1,5 +1,5 @@
 """Publicação exclusiva da Home, sem expor dados de gestão ou credenciais."""
-import ftplib, io, os, re, secrets, ssl, sys, urllib.request
+import ftplib, io, os, re, secrets, ssl, sys, tempfile, urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -40,7 +40,7 @@ def audit():
     print("Home: auditoria estrutural e isolamento da area privada aprovados.",flush=True)
 class ImplicitTLS(ftplib.FTP_TLS):
     @property
-    def sock(self): return self._sock
+    def sock(self): return getattr(self, '_sock', None)
     @sock.setter
     def sock(self, value):
         if value is not None and not isinstance(value, ssl.SSLSocket):
@@ -52,13 +52,63 @@ def get_https(path=""):
     with urllib.request.urlopen(req,timeout=25,context=ssl.create_default_context()) as r:
         if r.status!=200 or r.geturl()!=url: raise RuntimeError("HTTPS divergente")
         return r.read(2_000_000)
+
+class SFTPAdapter:
+    def __init__(self, client):
+        self.client=client
+        self.sftp=client.open_sftp()
+    def cwd(self,path): self.sftp.chdir(path)
+    def nlst(self): return self.sftp.listdir(".")
+    def retrbinary(self,cmd,write):
+        with self.sftp.open(cmd.removeprefix("RETR "),"rb") as f:
+            while True:
+                chunk=f.read(65536)
+                if not chunk: break
+                write(chunk)
+    def storbinary(self,cmd,stream):
+        self.sftp.putfo(stream,cmd.removeprefix("STOR "),confirm=True)
+    def rename(self,a,b):
+        # Não remover o destino previamente: falhar se a extensão atômica não for suportada.
+        self.sftp.posix_rename(a,b)
+    def delete(self,name): self.sftp.remove(name)
+    def quit(self): self.close()
+    def close(self):
+        try: self.sftp.close()
+        finally: self.client.close()
+
+def connect_sftp(host,user,password):
+    trusted=os.environ.get("TRUSTED_HOSTS","").strip()
+    if not trusted:
+        print("SFTP: secret LOCAWEB_KNOWN_HOSTS ausente. Sem conexao autenticada.",flush=True)
+        return None
+    import paramiko
+    client=paramiko.SSHClient()
+    try:
+        with tempfile.NamedTemporaryFile(mode="w",encoding="utf-8") as known:
+            known.write(trusted+"\n");known.flush()
+            client.load_host_keys(known.name)
+        if client.get_host_keys().lookup(host) is None:
+            raise RuntimeError("Chave confiavel nao corresponde ao host configurado")
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        client.connect(host,port=22,username=user,password=password,allow_agent=False,look_for_keys=False,timeout=12,banner_timeout=12,auth_timeout=12)
+        conn=SFTPAdapter(client)
+        conn.cwd(BASE)
+        print("SFTP: identidade validada e pasta de destino acessivel.",flush=True)
+        return conn
+    except Exception as e:
+        client.close()
+        print("SFTP: conexao segura nao confirmada ("+type(e).__name__+").",flush=True)
+        return None
+
 def publish():
     host,user,password=(os.environ.get(x,"") for x in ("FTP_HOST","FTP_USER","FTP_PASSWORD"))
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*",host) or not user or not password:
         raise RuntimeError("Credenciais ausentes ou host invalido")
     # Nenhuma credencial é transmitida antes da validação TLS do servidor.
-    ftp=None
-    for mode,port,cls in [("explicito",21,ftplib.FTP_TLS),("implicito",990,ImplicitTLS)]:
+    ftp=connect_sftp(host,user,password)
+    if ftp is None and os.environ.get('TRUSTED_HOSTS','').strip():
+        raise RuntimeError('SFTP configurado mas nao confirmado; sem nova tentativa autenticada')
+    for mode,port,cls in ([] if ftp else [("explicito",21,ftplib.FTP_TLS),("implicito",990,ImplicitTLS)]):
         c=None
         try:
             c=cls(context=ssl.create_default_context(),timeout=15)
@@ -68,7 +118,9 @@ def publish():
             print("FTPS "+mode+": certificado e identidade validados.",flush=True)
         except Exception as e:
             print("FTPS "+mode+": TLS nao confirmado ("+type(e).__name__+"). Nenhuma credencial enviada.",flush=True)
-            if c: c.close()
+            if c:
+                try: c.close()
+                except Exception: pass
             continue
         try:
             c.login(user,password)

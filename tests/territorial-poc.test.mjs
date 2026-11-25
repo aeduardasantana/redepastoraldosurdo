@@ -66,7 +66,7 @@ test("prévia sem envio de respostas pessoais, portal separado e sem acesso a pl
  assert.match(h,/Nenhum voto ou candidatura será registrado/);
  assert.doesNotMatch(h,/salvarPessoa\(|registrarVoto\(/);
  const portal=await readFile(new URL("../publico/index.html",import.meta.url),"utf8");
- assert.match(portal,/Acessar área privada/);assert.match(portal,/pastoraldosurdocentro\.blogspot\.com/);
+ assert.match(portal,/Entrar no sistema/);assert.match(portal,/pastoraldosurdocentro\.blogspot\.com/);
  assert.doesNotMatch(portal,/docs\.google\.com\/spreadsheets|google\.script\.run/);
 });
 

@@ -62,7 +62,7 @@ test("gestão nega antes de leitura ou escrita sem identidade confirmada",()=>{
 });
 test("prévia sem envio de respostas pessoais, portal separado e sem acesso a planilhas",async()=>{
  const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");
- assert.match(h,/v0\.9/);assert.match(h,/Não há gravação de respostas/);
+ assert.match(h,/v0\.10/);assert.match(h,/sem campos de resposta nesta etapa/);
  assert.match(h,/Nenhum voto ou candidatura será registrado/);
  assert.doesNotMatch(h,/salvarPessoa\(|registrarVoto\(/);
  const portal=await readFile(new URL("../publico/index.html",import.meta.url),"utf8");
@@ -70,6 +70,24 @@ test("prévia sem envio de respostas pessoais, portal separado e sem acesso a pl
  assert.doesNotMatch(portal,/docs\.google\.com\/spreadsheets|google\.script\.run/);
 });
 
-test("cadastro apresenta data de nascimento e endereço estruturado sem enviar dados",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");assert.match(h,/Data de nascimento/);assert.match(h,/el.type="date"/);assert.match(h,/el.inputMode="numeric"/);assert.match(h,/P55","P38","P52","P04","P37","P39","P53","P54"/);assert.doesNotMatch(h,/salvarPessoa\(/);});
+test("cadastro básico inclui data, endereço e vínculo opcional",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");for(const id of ["p-nascimento","p-cep","p-uf","p-cidade","p-bairro","p-logradouro","p-numero","p-complemento","p-regional","p-diocese","p-paroquia","p-comunidade"])assert.ok(h.includes('id="'+id+'"'));assert.match(h,/salvarCadastroBasico\(input\)/);assert.match(h,/sem campos de resposta nesta etapa/);});
 
 test("navegação por módulos inicia na home, mantém um painel visível e carrega cada consulta",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");const src=h.split("// BEGIN_PAGE_NAV")[1].split("// END_PAGE_NAV")[0];const ctx=vm.createContext({});vm.runInContext(src,ctx);assert.equal(ctx.paginaValida("cadastro-pessoas"),"cadastro-pessoas");assert.equal(ctx.paginaValida("inexistente"),"home");const ids=["home","territorio","inclusao","gestao","cadastro-pessoas","eleicoes","acessos-gestao","pagina-publica","acesso"];for(const id of ids){assert.ok(h.includes('data-page="'+id+'"'));assert.ok(h.includes('<section id="'+id+'"'+(id==="home"?">":" hidden>")));}assert.match(h,/T\(p\)\.hidden=p!==id/);assert.match(h,/\(id==="gestao"\|\|id==="cadastro-pessoas"\)&&!gestao\)carregarGestao\(\)/);assert.match(h,/abrirPagina\("home"\);/);assert.match(h,/questionario-status/);assert.match(h,/function atualizarHome\(/);assert.doesNotMatch(h,/<nav aria-label="Menu"><a/);});
+
+const pessoa={nome:"Pessoa Teste",preferido:"",nascimento:"1990-03-04",cidade:"Cidade Teste",uf:"GO",email:"",telefone:"",canal:"SEM_CONTATO",pais:"Brasil",cep:"",bairro:"",logradouro:"",numero:"",complemento:"",unidade:"",autorizado:true};
+test("cadastro básico aceita vínculo ausente ou unidade válida e recusa data inválida ou menor",()=>{
+ const today="2026-11-24";
+ assert.equal(context.validarCadastroBasico_(pessoa,fixture,today).unidade,"");
+ for(const unidade of ["CO","D01","P1","C1"])assert.equal(context.validarCadastroBasico_({...pessoa,unidade},fixture,today).unidade,unidade);
+ for(const x of [{unidade:"X"},{nascimento:"2000-02-30"},{nascimento:"2012-01-01"},{autorizado:false},{nome:"=FORMULA()"},{cep:"12345"}])assert.throws(()=>context.validarCadastroBasico_({...pessoa,...x},fixture,today));
+});
+test("cadastro básico e resumo não leem nem gravam sem autorização",()=>{
+ context.Session={getActiveUser:()=>({getEmail:()=>""})};context.SpreadsheetApp={openById:()=>{throw Error("não deve abrir")}};
+ assert.equal(context.salvarCadastroBasico(pessoa).ok,false);assert.equal(context.consultarResumoCadastro().ok,false);
+});
+test("home contém visão territorial e cadastro oficial sem opção nacional no menu eleitoral",async()=>{
+ const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");
+ assert.match(h,/home-territorial-table/);assert.match(h,/Pessoas vinculadas/);assert.match(h,/consultarResumoCadastro\(\)/);
+ const sec=h.slice(h.indexOf('<section id="eleicoes"'),h.indexOf('<section id="acessos-gestao"'));
+ assert.doesNotMatch(sec,/<option>Nacional<\/option>/);
+});

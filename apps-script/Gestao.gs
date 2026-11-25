@@ -224,7 +224,7 @@ function padronizarContato_(s,ddd){
   if(d.length!==10&&d.length!==11)return {contato:"",status:"REVISAR NUMERO OU DDD"};
   out.push("("+d.slice(0,2)+") "+d.slice(2,-4)+"-"+d.slice(-4));
  }
- return {contato:out.join(" / "),status:out.length?"FORMATADO — confirmar titularidade":"SEM CONTATO"};
+ return {contato:out.join(" / "),status:out.length?"FORMATADO":"SEM CONTATO"};
 }
 function consultarPessoasPorLocal(){
  try{

@@ -62,7 +62,7 @@ test("gestão nega antes de leitura ou escrita sem identidade confirmada",()=>{
 });
 test("prévia sem envio de respostas pessoais, portal separado e sem acesso a planilhas",async()=>{
  const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");
- assert.match(h,/v0\.13/);assert.match(h,/sem campos de resposta nesta etapa/);
+ assert.match(h,/v0\.14/);assert.match(h,/sem campos de resposta nesta etapa/);
  assert.match(h,/Nenhum voto ou candidatura será registrado/);
  assert.doesNotMatch(h,/salvarPessoa\(|registrarVoto\(/);
  const portal=await readFile(new URL("../publico/index.html",import.meta.url),"utf8");
@@ -107,7 +107,7 @@ test("gravação simulada preserva endereço, vínculo, autorização e evita du
  try{
  const p={...pessoa,unidade:"C1",cep:"74000-000",bairro:"Teste",logradouro:"Rua Teste",numero:"s/n"};
  assert.equal(context.salvarCadastroBasico(p).ok,true);assert.equal(writes,1);
- assert.equal(rows[1][3],"1990-03-04");assert.equal(rows[1][13],"74000-000");assert.equal(rows[1][18],"C1");assert.equal(rows[1][20],"CAD-BASICO-0.11");
+ assert.equal(rows[1][3],"1990-03-04");assert.equal(rows[1][13],"74000-000");assert.equal(rows[1][18],"C1");assert.equal(rows[1][20],"CAD-BASICO-0.14");
  assert.equal(context.salvarCadastroBasico(p).ok,false);assert.equal(writes,1);
  }finally{context.consultarTerritorio=original;}
 });
@@ -132,3 +132,27 @@ test("menus de grupos e alertas e composição documental",async()=>{
 test("padronização de nomes e telefone conserva DDD informado e aplica referência somente quando falta",()=>{assert.equal(context.padronizarNome_("MARIA DE SOUZA LIBRAS"),"Maria de Souza");assert.equal(context.padronizarContato_("99999-0000","61").contato,"(61) 99999-0000");assert.equal(context.padronizarContato_("(62) 99999-0000","61").contato,"(62) 99999-0000");assert.equal(context.padronizarContato_("99999-0000","").contato,"");});
 test("consulta de pessoas restrita e vínculos locais sem matriz",()=>{context.Session={getActiveUser:()=>({getEmail:()=>""})};context.SpreadsheetApp={openById:()=>{throw Error("não deve abrir")}};assert.equal(context.consultarPessoasPorLocal().ok,false);assert.equal(context.validarCadastroBasico_({...pessoa,unidade:"LOC-TEST"},{...fixture,locais:[{id:"LOC-TEST",unidade:""}]},"2026-11-24").unidade,"LOC-TEST");});
 test("interface inclui filtro territorial, DDD e seleção de local",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");assert.match(h,/id="p-filtro-local"/);assert.match(h,/id="pre-ref"/);assert.match(h,/consultarPessoasPorLocal/);assert.match(h,/DDD sugerido/);});
+
+test("ficha padrão aceita informação parcial sem data, cidade, UF, CPF ou endereço completo",()=>{
+ const p={...pessoa,nascimento:"",cidade:"",uf:"",pais:"",cep:"74000-000"};
+ assert.equal(context.validarCadastroBasico_(p,fixture,"2026-11-25").cep,"74000-000");
+ assert.equal(context.validarCadastroBasico_({...p,nome:"",telefone:"999999999"},fixture,"2026-11-25").telefone,"999999999");
+ assert.throws(()=>context.validarCadastroBasico_({...p,nome:""},fixture,"2026-11-25"));
+});
+test("ficha e contatos institucionais negam acesso sem identidade confirmada",()=>{
+ context.Session={getActiveUser:()=>({getEmail:()=>""})};context.SpreadsheetApp={openById:()=>{throw Error("não deve ler")}};
+ assert.equal(context.consultarFichaPessoa("X").ok,false);assert.equal(context.consultarContatosInstitucionais().ok,false);assert.equal(context.salvarContatoInstitucional({}).ok,false);
+});
+test("campos pessoais não obrigatórios, edição e diretório de contatos",async()=>{
+ const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");
+ for(const k of ["p-nome","p-nascimento","p-uf","p-cidade","p-pais"])assert.doesNotMatch(h,new RegExp('id="'+k+'"[^>]*\\brequired\\b'));
+ assert.match(h,/consultarFichaPessoa\(id\)/);assert.match(h,/id="p-revisao"/);assert.match(h,/data-page="contatos"/);assert.match(h,/consultarContatosInstitucionais\(\)/);
+});
+test("gravação de ficha parcial e complementação mantêm o mesmo ID, com controle de revisão",()=>{
+ const headers=Array.from(vm.runInContext("PESSOAS_HEADERS_",context)),rows=[headers];let locked=false;
+ const tab={getLastRow:()=>rows.length,getMaxRows:()=>200,getRange:(row,col,n,width)=>({getDisplayValues:()=>rows.slice(row-1,row-1+n).map(r=>r.slice(col-1,col-1+width)),setNumberFormat:()=>({setValues:v=>{rows[row-1]=v[0];}})})};
+ context.Session={getActiveUser:()=>({getEmail:()=>"owner@example.test"})};context.territorialConfig_=()=>({owner:"owner@example.test",sourceId:"test"});context.gestaoConfig_=()=>({operacionalId:"test",questionarioId:"test"});const original=context.consultarTerritorio;
+ context.consultarTerritorio=()=>({ok:true,data:fixture});context.SpreadsheetApp={openById:()=>({getSheetByName:()=>tab}),flush:()=>{}};context.Utilities={getUuid:()=>"TEST-PARTIAL",formatDate:()=>"2026-11-25"};context.LockService={getScriptLock:()=>({tryLock:()=>{locked=true;return true;},hasLock:()=>locked,releaseLock:()=>{locked=false;}})};
+ try{const p={...pessoa,nascimento:"",cidade:"",uf:"",pais:""};const first=context.salvarCadastroBasico(p);assert.equal(first.status,"PARCIAL");assert.equal(rows.length,2);const detail=context.consultarFichaPessoa(first.id);assert.equal(detail.ok,true);assert.equal(detail.pessoa.id,first.id);assert.equal(context.salvarCadastroBasico({...p,id:first.id,revisao:"invalid"}).ok,false);const updated=context.salvarCadastroBasico({...p,nascimento:"1990-03-04",id:first.id,revisao:detail.pessoa.revisao});assert.equal(updated.status,"CADASTRADO");assert.equal(updated.id,first.id);assert.equal(rows.length,2);
+ }finally{context.consultarTerritorio=original;}
+});

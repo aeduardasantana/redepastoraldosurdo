@@ -36,7 +36,7 @@ function criarCoordenacaoRascunho(input){
  const ss=SpreadsheetApp.openById(cfg.operacionalId),s=ss.getSheetByName("COORDENACOES");
  const existing=tabela_(ss,"COORDENACOES",COORD_HEADERS_);
  let v;try{v=validarEquipeRascunho_(input,territory.data,existing);}catch(e){return {ok:false,reason:e.message};}
- const id=old?editId:Utilities.getUuid(),now=new Date().toISOString(),row=old?s.getRange(2,1,s.getLastRow()-1,1).getDisplayValues().findIndex(r=>r[0]===editId)+2:s.getLastRow()+1;if(old&&row<2)throw Error("Registro não localizado.");
+ const id=Utilities.getUuid(),now=new Date().toISOString(),row=s.getLastRow()+1;
  if(row>1000)return {ok:false,reason:"Limite da homologação."};
  if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
  s.getRange(row,1,1,COORD_HEADERS_.length).setNumberFormat("@").setValues([[id,v.unidade,v.nome,v.nivel,v.tipo,"RASCUNHO","",v.fonte,"PENDENTE DE VALIDACAO",now,now]]);
@@ -74,7 +74,7 @@ function salvarCadastroBasico(input){
  const editId=typeof input.id==="string"?input.id.trim():"";const old=editId?rows.find(r=>r[0]===editId):null;if(editId&&(!old||!["CADASTRADO","PARCIAL"].includes(old[9])))return {ok:false,reason:"Registro indisponível."};if(old&&input.revisao!==old[11])return {ok:false,reason:"O cadastro foi atualizado. Abra novamente a ficha."};const token=v.cpf?cpfToken_(v.cpf,rows):(old?.[22]||"");
  if(token&&rows.some(r=>r[0]!==editId&&r[22]===token))return {ok:false,reason:"Possível cadastro existente. Encaminhe para revisão administrativa."};
  if(v.nome&&v.nascimento&&rows.some(r=>r[0]!==editId&&normalizarChave_(r[1])===normalizarChave_(v.nome)&&r[3]===v.nascimento))return {ok:false,reason:"Possível cadastro existente com mesmo nome e nascimento. Solicite revisão antes de cadastrar novamente."};
- const id=Utilities.getUuid(),now=new Date().toISOString(),row=s.getLastRow()+1;
+ const id=old?editId:Utilities.getUuid(),now=new Date().toISOString(),row=old?s.getRange(2,1,s.getLastRow()-1,1).getDisplayValues().findIndex(r=>r[0]===editId)+2:s.getLastRow()+1;if(old&&row<2)throw Error("Registro não localizado.");
  if(row>1000)return {ok:false,reason:"Limite do cadastro inicial."};
  if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
  const status=v.nome&&v.nascimento?"CADASTRADO":"PARCIAL";const values=[id,v.nome,v.preferido,v.nascimento,v.cidade,v.uf,v.email,v.telefone,v.canal,status,old?.[10]||now,now,v.pais,v.cep,v.bairro,v.logradouro,v.numero,v.complemento,v.unidade,now,"CAD-BASICO-0.14","DECLARACAO_DO_OPERADOR",token];

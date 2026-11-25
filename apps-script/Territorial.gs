@@ -47,7 +47,7 @@ function normalizarChave_(s){return String(s??"").trim().toLowerCase().normalize
 function validarSolicitacao_(input,data){
  const clean=(s,max,required=false)=>{if(typeof s!=="string")throw Error("Campo inválido.");const v=s.trim();if((required&&!v)||v.length>max||/^[=+\-@]|[\u0000-\u001f\u007f]/.test(v))throw Error("Preencha os campos institucionais sem fórmulas.");return v;};
  if(!input||typeof input!=="object")throw Error("Solicitação inválida.");
- const tipo=clean(input.tipo,30,true),superior=clean(input.superior,80,true),nome=clean(input.nome,180,true),cidade=clean(input.cidade,100,true),uf=clean(input.uf,2,true),bairro=clean(input.bairro,120),endereco=clean(input.endereco,300),cep=clean(input.cep,9),fonte=clean(input.fonte,500,true);
+ const tipo=clean(input.tipo,30,true),superior=clean(input.superior,80,true),nome=clean(input.nome,180,true),cidade=clean(input.cidade,100,true),uf=clean(input.uf,2,true),bairro=clean(input.bairro,120),endereco=clean(input.endereco,300),cep=clean(input.cep,9),fonte=clean(input.fonte||"Cadastro administrativo",500);
  if(!["PAROQUIA","QUASE_PAROQUIA","SANTUARIO","COMUNIDADE","CAPELA","NUCLEO"].includes(tipo)||!["GO","DF"].includes(uf)||cep&&!/^\d{5}-?\d{3}$/.test(cep))throw Error("Tipo, UF ou CEP inválido.");
  const local=["COMUNIDADE","CAPELA","NUCLEO"].includes(tipo),parents=local?data.paroquias:data.dioceses;
  if(!parents.some(x=>x.id===superior))throw Error("Selecione a unidade superior válida.");

@@ -107,7 +107,7 @@ test("gravação simulada preserva endereço, vínculo, autorização e evita du
  try{
  const p={...pessoa,unidade:"C1",cep:"74000-000",bairro:"Teste",logradouro:"Rua Teste",numero:"s/n"};
  assert.equal(context.salvarCadastroBasico(p).ok,true);assert.equal(writes,1);
- assert.equal(rows[1][3],"1990-03-04");assert.equal(rows[1][13],"74000-000");assert.equal(rows[1][18],"C1");assert.equal(rows[1][20],"CAD-BASICO-0.14");
+ assert.equal(rows[1][3],"1990-03-04");assert.equal(rows[1][13],"74000-000");assert.equal(rows[1][18],"C1");assert.equal(rows[1][20],"CAD-UNICO-1.0");
  assert.equal(context.salvarCadastroBasico(p).ok,false);assert.equal(writes,1);
  }finally{context.consultarTerritorio=original;}
 });

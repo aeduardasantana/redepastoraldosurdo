@@ -91,3 +91,23 @@ test("home contém visão territorial e cadastro oficial sem opção nacional no
  const sec=h.slice(h.indexOf('<section id="eleicoes"'),h.indexOf('<section id="acessos-gestao"'));
  assert.doesNotMatch(sec,/<option>Nacional<\/option>/);
 });
+
+test("gravação simulada preserva endereço, vínculo, autorização e evita duplicação",()=>{
+ const headers=vm.runInContext("PESSOAS_HEADERS_",context);
+ const rows=[Array.from(headers)];let writes=0,locked=false;
+ const tab={getLastRow:()=>rows.length,getMaxRows:()=>200,getRange:(row,col,n,width)=>({getDisplayValues:()=>rows.slice(row-1,row-1+n).map(r=>r.slice(col-1,col-1+width)),setNumberFormat:()=>({setValues:v=>{writes++;rows.push(v[0]);}})})};
+ context.Session={getActiveUser:()=>({getEmail:()=>"owner@example.test"})};
+ context.territorialConfig_=()=>({owner:"owner@example.test",sourceId:"test"});
+ context.gestaoConfig_=()=>({operacionalId:"test",questionarioId:"test"});
+ const original=context.consultarTerritorio;
+ context.consultarTerritorio=()=>({ok:true,data:fixture});
+ context.SpreadsheetApp={openById:()=>({getSheetByName:()=>tab}),flush:()=>{}};
+ context.Utilities={getUuid:()=>"TEST-001",formatDate:()=>"2026-11-24"};
+ context.LockService={getScriptLock:()=>({tryLock:()=>{locked=true;return true;},hasLock:()=>locked,releaseLock:()=>{locked=false;}})};
+ try{
+ const p={...pessoa,unidade:"C1",cep:"74000-000",bairro:"Teste",logradouro:"Rua Teste",numero:"s/n"};
+ assert.equal(context.salvarCadastroBasico(p).ok,true);assert.equal(writes,1);
+ assert.equal(rows[1][3],"1990-03-04");assert.equal(rows[1][13],"74000-000");assert.equal(rows[1][18],"C1");assert.equal(rows[1][20],"CAD-BASICO-0.10");
+ assert.equal(context.salvarCadastroBasico(p).ok,false);assert.equal(writes,1);
+ }finally{context.consultarTerritorio=original;}
+});

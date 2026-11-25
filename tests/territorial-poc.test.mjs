@@ -30,3 +30,14 @@ test("filtro de horários recorrentes e confirmados exclui divergências e ausê
 test("pastoral ativa exige evidência explícita independente do intérprete",()=>{const x=[{id:"a",pastoral:"Ativa — atividades informadas"},{id:"b",pastoral:"Não verificado",statusProgramacao:"CONFIRMADA"},{id:"c",pastoral:"Inativa"},{id:"d",pastoral:"A confirmar"}];assert.deepEqual(json(nav.filtrarAcessibilidade(x,"pastoral")).map(r=>r.id),["a"]);});
 test("vínculo explícito prevalece sobre correspondência por fonte",()=>{const x={...fixture,missas:[{id:"M4",diocese:"D01",unidade:"P1"},{id:"M5",diocese:"D01",unidade:"OTHER",fonte:"https://example.test/ficha-a"}]};assert.deepEqual(json(nav.referenciasRelacionadas(x,fixture.paroquias[0],"paroquia")).map(r=>r.id),["M4"]);});
 test("sessão real não lê registros fictícios e nega identidade ausente",()=>{context.territorialConfig_=()=>({owner:"owner@example.test",sourceId:"test"});context.Session={getActiveUser:()=>({getEmail:()=>"owner@example.test"})};context.SpreadsheetApp={openById:()=>{throw Error("sessão não deve ler planilhas")}};assert.equal(context.verificarSessao().ok,true);assert.equal(context.verificarSessao().escopo,"Regional Centro-Oeste");context.Session={getActiveUser:()=>({getEmail:()=>""})};assert.equal(context.verificarSessao().ok,false);assert.doesNotMatch(navHtml,/consultarPainel\(|Registros fictícios/);assert.match(navHtml,/verificarSessao\(\)/);});
+
+test("pastorais ativas inclui locais de referência sem duplicar unidade vinculada",()=>{
+ const data={...fixture,paroquias:[{...fixture.paroquias[0],pastoral:"Ativa — confirmação"}],comunidades:[],missas:[{id:"M1",diocese:"D01",unidade:"P1",pastoral:"Ativa — fonte",nome:"Matriz",cidade:"Cidade"},{id:"M2",diocese:"D01",unidade:"P1",pastoral:"Ativa — fonte",nome:"Matriz",cidade:"Cidade"},{id:"M3",diocese:"D02",pastoral:"Ativa — fonte",nome:"Local DF",cidade:"Cidade DF"},{id:"M4",diocese:"D02",pastoral:"Inativa na fonte"},{id:"M5",diocese:"D02",statusProgramacao:"CONFIRMADA"}]};
+ assert.deepEqual(json(nav.locaisPastoraisAtivas(data,new Set(["D01","D02"]),"","","")).map(x=>x.id),["P1","M3"]);
+ assert.deepEqual(json(nav.locaisPastoraisAtivas(data,new Set(["D02"]),"D02","","")).map(x=>x.id),["M3"]);
+ assert.equal(nav.locaisPastoraisAtivas(data,new Set(["D02"]),"D02","P2","").length,0);
+});
+test("mapeamento conserva atuação pastoral e fonte independente da programação",()=>{
+ const m=["M1","D01","Cidade","Local","Rua","Domingo","9h","Ativo","2026","Fonte","Validar","Missa","","RECORRENTE INFORMADA","Ativa — fonte","Fonte pastoral"];
+ const x=run(d,p,c,[m]).missas[0];assert.equal(x.pastoral,"Ativa — fonte");assert.equal(x.fontePastoral,"Fonte pastoral");assert.equal(x.statusProgramacao,"RECORRENTE INFORMADA");
+});

@@ -60,7 +60,7 @@ function validarCadastroBasico_(input,data,hoje){
  if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error("E-mail inválido.");
  if(telefone&&!/^[0-9 ()-]{8,25}$/.test(telefone))throw Error("Telefone inválido.");
  if(!["","EMAIL","WHATSAPP","SEM_CONTATO"].includes(canal)||(canal==="EMAIL"&&!email)||(canal==="WHATSAPP"&&!telefone))throw Error("Confira o canal de contato.");
- if(unidade&&unidade!=="CO"&&![...data.dioceses,...data.paroquias,...data.comunidades].some(x=>x.id===unidade))throw Error("Unidade de vínculo não reconhecida.");
+ if(unidade&&unidade!=="CO"&&![...data.dioceses,...data.paroquias,...data.comunidades,...(data.locais||[]).filter(x=>!x.unidade)].some(x=>x.id===unidade))throw Error("Unidade de vínculo não reconhecida.");
  const cpf=input.cpf==null?"":normalizarCpf_(input.cpf);return {nome,preferido,nascimento,cidade,uf,email,telefone,canal,pais,cep,bairro,logradouro,numero,complemento,unidade,cpf};
 }
 function salvarCadastroBasico(input){

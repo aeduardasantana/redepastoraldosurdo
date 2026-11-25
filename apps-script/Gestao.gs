@@ -44,7 +44,7 @@ function criarCoordenacaoRascunho(input){
  }catch(e){return {ok:false,reason:"Não foi possível registrar o rascunho."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
 }
 
-const PESSOAS_HEADERS_=["ID_PESSOA","NOME_COMPLETO","NOME_PREFERIDO","DATA_NASCIMENTO","MUNICIPIO_RA","UF","EMAIL","TELEFONE_WHATSAPP","CANAL_CONTATO","STATUS_CADASTRO","CRIADO_EM","ATUALIZADO_EM","PAIS","CEP","BAIRRO","LOGRADOURO","NUMERO","COMPLEMENTO","ID_UNIDADE_VINCULO_INICIAL","AUTORIZACAO_CADASTRO_EM","VERSAO_AVISO","ORIGEM_AUTORIZACAO"];
+const PESSOAS_HEADERS_=["ID_PESSOA","NOME_COMPLETO","NOME_PREFERIDO","DATA_NASCIMENTO","MUNICIPIO_RA","UF","EMAIL","TELEFONE_WHATSAPP","CANAL_CONTATO","STATUS_CADASTRO","CRIADO_EM","ATUALIZADO_EM","PAIS","CEP","BAIRRO","LOGRADOURO","NUMERO","COMPLEMENTO","ID_UNIDADE_VINCULO_INICIAL","AUTORIZACAO_CADASTRO_EM","VERSAO_AVISO","ORIGEM_AUTORIZACAO","CPF_TOKEN"];
 function validarCadastroBasico_(input,data,hoje){
  const clean=(v,max,required=false)=>{if(typeof v!=="string")throw Error("Campo inválido.");const s=v.trim();if((required&&!s)||s.length>max||/^[=+\-@]|[\u0000-\u001f\u007f]/.test(s))throw Error("Confira os campos de cadastro.");return s;};
  if(!input||typeof input!=="object"||input.autorizado!==true)throw Error("É necessário confirmar autorização institucional e da pessoa para o cadastro.");
@@ -60,7 +60,7 @@ function validarCadastroBasico_(input,data,hoje){
  if(telefone&&!/^[0-9 ()-]{8,25}$/.test(telefone))throw Error("Telefone inválido.");
  if(!["","EMAIL","WHATSAPP","SEM_CONTATO"].includes(canal)||(canal==="EMAIL"&&!email)||(canal==="WHATSAPP"&&!telefone))throw Error("Confira o canal de contato.");
  if(unidade&&unidade!=="CO"&&![...data.dioceses,...data.paroquias,...data.comunidades].some(x=>x.id===unidade))throw Error("Unidade de vínculo não reconhecida.");
- return {nome,preferido,nascimento,cidade,uf,email,telefone,canal,pais,cep,bairro,logradouro,numero,complemento,unidade};
+ const cpf=input.cpf==null?"":normalizarCpf_(input.cpf);return {nome,preferido,nascimento,cidade,uf,email,telefone,canal,pais,cep,bairro,logradouro,numero,complemento,unidade,cpf};
 }
 function salvarCadastroBasico(input){
  const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
@@ -70,11 +70,13 @@ function salvarCadastroBasico(input){
  lock=LockService.getScriptLock();if(!lock.tryLock(5000))return {ok:false,reason:"Outra operação em andamento. Tente novamente."};
  const ss=SpreadsheetApp.openById(cfg.operacionalId),s=ss.getSheetByName("PESSOAS");
  const rows=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_);
+ const token=v.cpf?cpfToken_(v.cpf,rows):"";
+ if(token&&rows.some(r=>r[22]===token))return {ok:false,reason:"Possível cadastro existente. Encaminhe para revisão administrativa."};
  if(rows.some(r=>normalizarChave_(r[1])===normalizarChave_(v.nome)&&r[3]===v.nascimento))return {ok:false,reason:"Possível cadastro existente com mesmo nome e nascimento. Solicite revisão antes de cadastrar novamente."};
  const id=Utilities.getUuid(),now=new Date().toISOString(),row=s.getLastRow()+1;
  if(row>1000)return {ok:false,reason:"Limite do cadastro inicial."};
  if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
- const values=[id,v.nome,v.preferido,v.nascimento,v.cidade,v.uf,v.email,v.telefone,v.canal,"CADASTRADO",now,now,v.pais,v.cep,v.bairro,v.logradouro,v.numero,v.complemento,v.unidade,now,"CAD-BASICO-0.10","DECLARACAO_DO_OPERADOR"];
+ const values=[id,v.nome,v.preferido,v.nascimento,v.cidade,v.uf,v.email,v.telefone,v.canal,"CADASTRADO",now,now,v.pais,v.cep,v.bairro,v.logradouro,v.numero,v.complemento,v.unidade,now,"CAD-BASICO-0.11","DECLARACAO_DO_OPERADOR",token];
  s.getRange(row,1,1,values.length).setNumberFormat("@").setValues([values]);SpreadsheetApp.flush();
  return {ok:true,id};
  }catch(e){return {ok:false,reason:"Não foi possível confirmar a gravação. Confira a planilha antes de tentar novamente."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
@@ -87,4 +89,39 @@ function consultarResumoCadastro(){
  const equipes=tabela_(ss,"COORDENACOES",COORD_HEADERS_).filter(x=>x[5]!=="ARQUIVADA");
  return {ok:true,total:r.length,unidades:Object.entries(unidades).map(([id,total])=>({id,total})),equipes:equipes.length,rascunhos:equipes.filter(x=>x[5]==="RASCUNHO").length};
  }catch(e){return {ok:false,reason:"Indicadores de cadastro indisponíveis."};}
+}
+
+function normalizarCpf_(value){
+ if(typeof value!=="string")throw Error("CPF inválido.");
+ const raw=value.trim();if(!raw)return "";
+ if(!/^[0-9.\- ]{11,18}$/.test(raw))throw Error("CPF inválido.");
+ const n=raw.replace(/\D/g,"");if(n.length!==11||/^(\d)\1{10}$/.test(n))throw Error("CPF inválido.");
+ for(let k=9;k<11;k++){let sum=0;for(let i=0;i<k;i++)sum+=Number(n[i])*(k+1-i);const digit=(sum*10)%11;if(Number(n[k])!==(digit===10?0:digit))throw Error("CPF inválido.");}
+ return n;
+}
+function cpfToken_(cpf,rows){
+ const prop=PropertiesService.getScriptProperties();let key=prop.getProperty("CPF_HMAC_KEY");
+ if(!key){if(rows.some(r=>r[22]))throw Error("Configuração de identificação indisponível.");key=Utilities.getUuid()+Utilities.getUuid();prop.setProperty("CPF_HMAC_KEY",key);}
+ return Utilities.computeHmacSha256Signature(cpf,key).map(b=>((b+256)%256).toString(16).padStart(2,"0")).join("");
+}
+const PRE_HEADERS_=["ID_PRE_CADASTRO","NOME_CONFORME_FONTE","CONTATO_CONFORME_FONTE","FUNCAO_INFORMADA_NA_FONTE","LOCAL_INFORMADO","CIDADE_RA","SITUACAO_NA_FONTE","DATA_NA_FONTE","FONTE","REFERENCIA_LINHA","STATUS_REVISAO","ID_PESSOA_CONFIRMADO"];
+function consultarPreCadastros(){
+ try{const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
+ const rows=tabela_(SpreadsheetApp.openById(cfg.operacionalId),"PRE_CADASTROS",PRE_HEADERS_);
+ return {ok:true,registros:rows.filter(r=>r[10]==="PENDENTE_IDENTIFICACAO").map(r=>({id:r[0],nome:r[1],contato:r[2],funcao:r[3],local:r[4],cidade:r[5],situacao:r[6],data:r[7]}))};
+ }catch(e){return {ok:false,reason:"Pré-cadastros indisponíveis."};}
+}
+function salvarPreCadastro(input){
+ const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
+ let lock;try{
+ const clean=(v,max)=>{if(typeof v!=="string"||v.length>max||/^[=+\-@]|[\u0000-\u001f\u007f]/.test(v.trim()))throw Error("Campo inválido.");return v.trim();};
+ if(input?.autorizado!==true)return {ok:false,reason:"Confirme autorização para registrar o contato."};
+ const nome=clean(input.nome,180),contato=clean(input.contato,200),local=clean(input.local,180),cidade=clean(input.cidade,120);
+ if(!nome&&!contato)return {ok:false,reason:"Informe pelo menos nome ou contato."};
+ lock=LockService.getScriptLock();if(!lock.tryLock(5000))return {ok:false,reason:"Tente novamente."};
+ const ss=SpreadsheetApp.openById(cfg.operacionalId),s=ss.getSheetByName("PRE_CADASTROS"),rows=tabela_(ss,"PRE_CADASTROS",PRE_HEADERS_);
+ if(rows.some(r=>r[10]==="PENDENTE_IDENTIFICACAO"&&normalizarChave_(r[1])===normalizarChave_(nome)&&normalizarChave_(r[2])===normalizarChave_(contato)&&normalizarChave_(r[4])===normalizarChave_(local)))return {ok:false,reason:"Referência já cadastrada. Revise os registros existentes."};
+ const id=Utilities.getUuid(),row=s.getLastRow()+1;if(row>1000)return {ok:false,reason:"Limite da base."};if(row>s.getMaxRows())s.insertRowsAfter(s.getMaxRows(),Math.min(100,1000-s.getMaxRows()));
+ s.getRange(row,1,1,12).setNumberFormat("@").setValues([[id,nome,contato,"",local,cidade,"",new Date().toISOString(),"Registro administrativo autorizado","","PENDENTE_IDENTIFICACAO",""]]);SpreadsheetApp.flush();return {ok:true,id};
+ }catch(e){return {ok:false,reason:"Não foi possível confirmar o pré-cadastro. Confira a planilha."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
 }

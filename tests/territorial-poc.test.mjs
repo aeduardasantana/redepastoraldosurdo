@@ -114,7 +114,7 @@ test("gravação simulada preserva endereço, vínculo, autorização e evita du
 
 test("CPF normalizado e dígitos verificadores, sem exigir CPF para contato parcial",()=>{assert.equal(context.normalizarCpf_("529.982.247-25"),"52998224725");assert.equal(context.normalizarCpf_(""),"");assert.throws(()=>context.normalizarCpf_("11111111111"));assert.throws(()=>context.normalizarCpf_("52998224726"));});
 test("pré-cadastro não autorizado não lê nem grava",()=>{context.Session={getActiveUser:()=>({getEmail:()=>""})};context.SpreadsheetApp={openById:()=>{throw Error("não deve abrir")}};assert.equal(context.consultarPreCadastros().ok,false);assert.equal(context.salvarPreCadastro({}).ok,false);});
-test("ficha apresenta horários, link de localização institucional e detalhes recolhíveis",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");assert.match(h,/google\.com\/maps\/search\/\?api=1/);assert.match(h,/encodeURIComponent/);assert.match(h,/Histórico e fontes/);assert.match(h,/consultarPreCadastros\(\)/);assert.match(h,/salvarPreCadastro\(/);});
+test("ficha apresenta horários, link de localização institucional e detalhes recolhíveis",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");assert.match(h,/google\.com\/maps\/search\/\?api=1/);assert.match(h,/encodeURIComponent/);assert.doesNotMatch(h,/Identidade cadastral a validar|Composição conforme fontes institucionais/);assert.match(h,/consultarPreCadastros\(\)/);assert.match(h,/salvarPreCadastro\(/);});
 
 test("grupos e alertas negam acesso antes de leitura",()=>{
  context.Session={getActiveUser:()=>({getEmail:()=>""})};context.SpreadsheetApp={openById:()=>{throw Error("não deve abrir")}};

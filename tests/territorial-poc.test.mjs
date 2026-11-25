@@ -62,7 +62,7 @@ test("gestão nega antes de leitura ou escrita sem identidade confirmada",()=>{
 });
 test("prévia sem envio de respostas pessoais, portal separado e sem acesso a planilhas",async()=>{
  const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");
- assert.match(h,/v0\.10/);assert.match(h,/sem campos de resposta nesta etapa/);
+ assert.match(h,/v0\.11/);assert.match(h,/sem campos de resposta nesta etapa/);
  assert.match(h,/Nenhum voto ou candidatura será registrado/);
  assert.doesNotMatch(h,/salvarPessoa\(|registrarVoto\(/);
  const portal=await readFile(new URL("../publico/index.html",import.meta.url),"utf8");
@@ -107,7 +107,11 @@ test("gravação simulada preserva endereço, vínculo, autorização e evita du
  try{
  const p={...pessoa,unidade:"C1",cep:"74000-000",bairro:"Teste",logradouro:"Rua Teste",numero:"s/n"};
  assert.equal(context.salvarCadastroBasico(p).ok,true);assert.equal(writes,1);
- assert.equal(rows[1][3],"1990-03-04");assert.equal(rows[1][13],"74000-000");assert.equal(rows[1][18],"C1");assert.equal(rows[1][20],"CAD-BASICO-0.10");
+ assert.equal(rows[1][3],"1990-03-04");assert.equal(rows[1][13],"74000-000");assert.equal(rows[1][18],"C1");assert.equal(rows[1][20],"CAD-BASICO-0.11");
  assert.equal(context.salvarCadastroBasico(p).ok,false);assert.equal(writes,1);
  }finally{context.consultarTerritorio=original;}
 });
+
+test("CPF normalizado e dígitos verificadores, sem exigir CPF para contato parcial",()=>{assert.equal(context.normalizarCpf_("529.982.247-25"),"52998224725");assert.equal(context.normalizarCpf_(""),"");assert.throws(()=>context.normalizarCpf_("11111111111"));assert.throws(()=>context.normalizarCpf_("52998224726"));});
+test("pré-cadastro não autorizado não lê nem grava",()=>{context.Session={getActiveUser:()=>({getEmail:()=>""})};context.SpreadsheetApp={openById:()=>{throw Error("não deve abrir")}};assert.equal(context.consultarPreCadastros().ok,false);assert.equal(context.salvarPreCadastro({}).ok,false);});
+test("ficha apresenta horários, link de localização institucional e detalhes recolhíveis",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");assert.match(h,/google\.com\/maps\/search\/\?api=1/);assert.match(h,/encodeURIComponent/);assert.match(h,/Ver informações cadastrais e fonte/);assert.match(h,/consultarPreCadastros\(\)/);assert.match(h,/salvarPreCadastro\(/);});

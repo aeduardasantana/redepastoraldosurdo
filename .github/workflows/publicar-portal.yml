@@ -1,0 +1,35 @@
+name: Publicar Home Pastoral na Locaweb
+on:
+  push:
+    branches: [b03-apps-script-poc]
+    paths:
+      - 'publico/index.html'
+      - 'scripts/publicar_portal.py'
+      - '.github/workflows/publicar-portal.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rede-pastoral-home-locaweb
+  cancel-in-progress: false
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Auditar Home e limites de publicacao
+        run: python3 scripts/publicar_portal.py
+  publicar:
+    if: github.ref == 'refs/heads/b03-apps-script-poc'
+    needs: validar
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publicar exclusivamente index.html via FTPS seguro
+        env:
+          FTP_HOST: ${{ secrets.HOST }}
+          FTP_USER: ${{ secrets.USER }}
+          FTP_PASSWORD: ${{ secrets.PASS }}
+        run: python3 scripts/publicar_portal.py --publish

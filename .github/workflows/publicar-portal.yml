@@ -5,6 +5,7 @@ on:
     paths:
       - 'publico/index.html'
       - 'scripts/publicar_portal.py'
+      - 'scripts/deploy_portal_ftp.py'
       - '.github/workflows/publicar-portal.yml'
   workflow_dispatch:
 permissions:
@@ -19,7 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Auditar Home e limites de publicacao
-        run: python3 scripts/publicar_portal.py
+        run: |
+          python3 scripts/publicar_portal.py
+          python3 -m py_compile scripts/deploy_portal_ftp.py
   publicar:
     if: github.ref == 'refs/heads/b03-apps-script-poc'
     needs: validar
@@ -27,15 +30,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Preparar cliente SFTP
-        env:
-          TRUSTED_HOSTS: ${{ secrets.LOCAWEB_KNOWN_HOSTS }}
-        if: env.TRUSTED_HOSTS != ''
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-paramiko
-      - name: Publicar exclusivamente index.html via SFTP ou FTPS seguro
+      - name: Deploy FTP convencional autorizado e verificacao HTTPS
         env:
           FTP_HOST: ${{ secrets.HOST }}
           FTP_USER: ${{ secrets.USER }}
           FTP_PASSWORD: ${{ secrets.PASS }}
-          TRUSTED_HOSTS: ${{ secrets.LOCAWEB_KNOWN_HOSTS }}
-        run: /usr/bin/python3 scripts/publicar_portal.py --publish
+        run: python3 scripts/deploy_portal_ftp.py

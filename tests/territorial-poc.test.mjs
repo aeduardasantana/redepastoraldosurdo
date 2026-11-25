@@ -62,10 +62,12 @@ test("gestão nega antes de leitura ou escrita sem identidade confirmada",()=>{
 });
 test("prévia sem envio de respostas pessoais, portal separado e sem acesso a planilhas",async()=>{
  const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");
- assert.match(h,/v0\.7/);assert.match(h,/Não há gravação de respostas/);
+ assert.match(h,/v0\.8/);assert.match(h,/Não há gravação de respostas/);
  assert.match(h,/Nenhum voto ou candidatura será registrado/);
  assert.doesNotMatch(h,/salvarPessoa\(|registrarVoto\(/);
  const portal=await readFile(new URL("../publico/index.html",import.meta.url),"utf8");
  assert.match(portal,/Acessar área privada/);assert.match(portal,/pastoraldosurdocentro\.blogspot\.com/);
  assert.doesNotMatch(portal,/docs\.google\.com\/spreadsheets|google\.script\.run/);
 });
+
+test("cadastro apresenta data de nascimento e endereço estruturado sem enviar dados",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");assert.match(h,/Data de nascimento/);assert.match(h,/el.type="date"/);assert.match(h,/el.inputMode="numeric"/);assert.match(h,/P55","P38","P52","P04","P37","P39","P53","P54"/);assert.doesNotMatch(h,/salvarPessoa\(/);});

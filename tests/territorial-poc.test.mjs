@@ -62,7 +62,7 @@ test("gestão nega antes de leitura ou escrita sem identidade confirmada",()=>{
 });
 test("prévia sem envio de respostas pessoais, portal separado e sem acesso a planilhas",async()=>{
  const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");
- assert.match(h,/v0\.12/);assert.match(h,/sem campos de resposta nesta etapa/);
+ assert.match(h,/v0\.13/);assert.match(h,/sem campos de resposta nesta etapa/);
  assert.match(h,/Nenhum voto ou candidatura será registrado/);
  assert.doesNotMatch(h,/salvarPessoa\(|registrarVoto\(/);
  const portal=await readFile(new URL("../publico/index.html",import.meta.url),"utf8");
@@ -128,3 +128,7 @@ test("menus de grupos e alertas e composição documental",async()=>{
  for(const id of ["grupos","alertas"]) {assert.ok(h.includes('data-page="'+id+'"'));assert.ok(h.includes('<section id="'+id+'" hidden>'));}
  assert.match(h,/equipe-composicao/);assert.match(h,/criarGrupoTrabalho/);assert.match(h,/adicionarMembroGrupo/);assert.match(h,/criarAlertaRede/);assert.match(h,/publicarAlertaRede/);assert.match(h,/Nenhum disparo externo ocorre nesta versão/);
 });
+
+test("padronização de nomes e telefone conserva DDD informado e aplica referência somente quando falta",()=>{assert.equal(context.padronizarNome_("MARIA DE SOUZA LIBRAS"),"Maria de Souza");assert.equal(context.padronizarContato_("99999-0000","61").contato,"(61) 99999-0000");assert.equal(context.padronizarContato_("(62) 99999-0000","61").contato,"(62) 99999-0000");assert.equal(context.padronizarContato_("99999-0000","").contato,"");});
+test("consulta de pessoas restrita e vínculos locais sem matriz",()=>{context.Session={getActiveUser:()=>({getEmail:()=>""})};context.SpreadsheetApp={openById:()=>{throw Error("não deve abrir")}};assert.equal(context.consultarPessoasPorLocal().ok,false);assert.equal(context.validarCadastroBasico_({...pessoa,unidade:"LOC-TEST"},{...fixture,locais:[{id:"LOC-TEST",unidade:""}]},"2026-11-24").unidade,"LOC-TEST");});
+test("interface inclui filtro territorial, DDD e seleção de local",async()=>{const h=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");assert.match(h,/id="p-filtro-local"/);assert.match(h,/id="pre-ref"/);assert.match(h,/consultarPessoasPorLocal/);assert.match(h,/DDD sugerido/);});

@@ -55,6 +55,7 @@ function filtrarAcessibilidade(rows,filtro){
  return rows;
 }
 function locaisPastoraisAtivas(data,ids,jur,par,com){
+ if(Array.isArray(data.pastorais))return data.pastorais.filter(x=>x.situacaoPastoral==="Ativa"&&ids.has(x.diocese)&&(!jur||x.diocese===jur)&&(!par||x.unidade===par||data.comunidades.some(c=>c.id===x.unidade&&c.paroquia===par))&&(!com||x.unidade===com)&&x.unidade!==x.diocese&&x.unidade!=="CO");
  const ativa=x=>/^ativa(?:\s|$|—)/i.test(x.pastoral||"");
  const allowed=x=>ids.has(x.diocese)&&(!jur||x.diocese===jur);
  const places=[...data.paroquias.filter(x=>allowed(x)&&(!par||x.id===par)&&!com&&ativa(x)).map(x=>({...x,resultKind:"paroquias"})),...data.comunidades.filter(x=>allowed(x)&&(!par||x.paroquia===par)&&(!com||x.id===com)&&ativa(x)).map(x=>({...x,resultKind:"comunidades"}))];

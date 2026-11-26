@@ -66,7 +66,7 @@ test("CEP institucional: sugestão não altera campos manuais nem vínculos; UF 
 test("CEP institucional: interface liga consulta compartilhada às fichas paroquiais, comunidades e solicitação de inclusão",async()=>{
  for(const path of ["../apps-script/Index.html","../implantacao/Index-v0.15.html"]){
   const html=await readFile(new URL(path,import.meta.url),"utf8");
-  assert.match(html,/if\(\["paroquias","comunidades"\]\.includes\(tipo\)\)/);
+  assert.match(html,/if\(\["paroquias","comunidades"\]\.includes\(tipo\)&&!id\)/);
   assert.match(html,/instalarCepInstitucional\(cep,cep\.parentElement,form/);
   assert.match(html,/instalarCepInstitucional\(T\("new-cep"\)/);
   assert.match(html,/Preencher campos vazios/);
@@ -114,4 +114,23 @@ test("Endereço diocesano: gravação atômica e sem alteração de IDs ou fonte
  assert.ok(req.some(x=>x.updateCells?.range.sheetId===52032&&x.updateCells.range.startColumnIndex===4));
  assert.ok(req.some(x=>x.appendCells?.sheetId===52031));
  assert.ok(req.filter(x=>x.updateCells).every(x=>x.updateCells.range.startColumnIndex>0&&!(x.updateCells.range.sheetId===52032&&[12,13,14,19].includes(x.updateCells.range.startColumnIndex))));
+});
+
+test("Endereço integrado: resolve unidade vinculada, local independente, sede CO e organização sem inferir endereço",async()=>{
+ const c=vm.createContext({});for(const path of ["EnderecoDiocesano.gs","EnderecoRede.gs"])vm.runInContext(await readFile(new URL("../apps-script/"+path,import.meta.url),"utf8"),c);
+ const d=["D01","Arquidiocese","Goiânia","GO"],p=Array(33).fill("");Object.assign(p,{0:"P1",1:"D01",3:"Paróquia",4:"Paróquia",5:"Goiânia",32:"ATIVO"});
+ const mk=(id,origem,diocese,uf)=>{const r=Array(24).fill("");Object.assign(r,{0:id,2:id,3:"Brasil",9:"Goiânia",10:uf,13:origem,19:diocese});return r;};
+ const map=rows=>new Map(rows.map((r,i)=>[r[0],{r,i:i+1}]));
+ const l1=["L1","D01","Local vinculado","Paróquia","","","P1","","","","Goiânia","","","GO"],l2=["L2","D01","Local próprio","Centro","","","","","","","Goiânia","","","GO"];
+ const b={idx:{dioceses:map([d]),paroquias:map([p]),comunidades:map([]),locais:map([l1,l2]),organizacoes:map([["ORG001","CNBB","CNBB Regional Centro-Oeste","Goiânia","GO"],["ORG002","Pastoral","Pastoral","GO e DF","GO"]]),enderecos:map([mk("P1","PARÓQUIAS","D01","GO"),mk("L2","LOCAIS_REFERENCIA","D01","GO"),mk("CI-CNBBCO-001","CONTATOS_INSTITUCIONAIS","","GO")])}};
+ assert.equal(c.er16Alvo_(b,"locais","L1").alvo,"P1");assert.equal(c.er16Alvo_(b,"locais","L2").alvo,"L2");
+ assert.equal(c.er16Alvo_(b,"regional","CO").alvo,"CI-CNBBCO-001");assert.equal(c.er16Alvo_(b,"organizacoes","ORG001").alvo,"CI-CNBBCO-001");
+ const a=c.er16Alvo_(b,"organizacoes","ORG002");assert.equal(a.campos.cidade,"");assert.equal(a.campos.uf,"");
+ assert.throws(()=>c.er16Plano_(a,{campos:{cidade:"Goiânia"}}),/confirme/);
+ assert.equal(c.er16Plano_(a,{campos:{cidade:"Goiânia",uf:"GO"},confirmarEndereco:true}).v.cidade,"Goiânia");
+ assert.throws(()=>c.er16Plano_(c.er16Alvo_(b,"locais","L1"),{campos:{uf:"DF"}}),/UF da jurisdição/);
+ c.autorizacaoTerritorial_=()=>null;assert.equal(c.listarEnderecosRedeV016().ok,false);assert.equal(c.salvarEnderecoRedeV016({}).ok,false);assert.equal(c.sincronizarEspelhoEnderecoV016("locais","L1").ok,false);
+});
+test("Endereço integrado: catálogo e edição centralizada no pacote privado",async()=>{
+ for(const path of ["../apps-script/Index.html","../implantacao/Index-v0.15.html"]){const h=await readFile(new URL(path,import.meta.url),"utf8");assert.match(h,/listarEnderecosRedeV016\(\)/);assert.match(h,/consultarEnderecoRedeV016\(tipo,id\)/);assert.match(h,/salvarEnderecoRedeV016\(/);assert.match(h,/sincronizarEspelhoEnderecoV016\(/);assert.match(h,/id="er16-confirm"/);assert.match(h,/T\("cad-t-"\+k\)\.readOnly=true/);assert.doesNotThrow(()=>new vm.Script(h.match(/<script>([\s\S]*?)<\/script>/)[1]));}
 });

@@ -8,6 +8,7 @@ on:
       - 'tests/territorial-poc.test.mjs'
       - 'tests/cep.test.mjs'
       - 'tests/agenda-pastoral.test.mjs'
+      - 'tests/relacoes-institucionais.test.mjs'
       - '.github/workflows/apps-script-poc.yml'
 permissions:
   contents: read
@@ -18,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Testar autorizacao territorial
-        run: node --test tests/apps-script-poc.test.mjs tests/territorial-poc.test.mjs tests/cep.test.mjs tests/agenda-pastoral.test.mjs
+        run: node --test tests/apps-script-poc.test.mjs tests/territorial-poc.test.mjs tests/cep.test.mjs tests/agenda-pastoral.test.mjs tests/relacoes-institucionais.test.mjs
       - name: Validar manifesto e HTML
         run: |
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('apps-script/appsscript.json'));if(m.runtimeVersion!=='V8')process.exit(1)"

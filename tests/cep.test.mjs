@@ -30,10 +30,20 @@ test("CEP: cache confirmado recente não consulta API e não envia identificador
  ctx.UrlFetchApp={fetch:()=>{throw Error("cache deve evitar API")}};
  const out=ctx.consultarCepRede("01001-000");assert.equal(out.ok,true);assert.equal(out.cached,true);assert.doesNotMatch(JSON.stringify(out),/ID-INSTITUCIONAL/);
 });
-test("CEP: interface possui campo único e preenchimento explícito",async()=>{
- const html=await readFile(new URL("../apps-script/Index.html",import.meta.url),"utf8");
- assert.match(html,/Bairro \/ Setor \/ Região Administrativa/);
- assert.match(html,/id="p-ra-slot" hidden/);
- assert.match(html,/consultarCepRede\(cep\)/);
- assert.match(html,/id="p-cep-aplicar"/);
+test("CEP: município, região administrativa e bairro são campos independentes nas duas versões da interface",async()=>{
+ for(const path of ["../apps-script/Index.html","../implantacao/Index-v0.15.html"]){
+  const html=await readFile(new URL(path,import.meta.url),"utf8");
+  assert.match(html,/id="p-ra-slot"><\/div>/);
+  assert.match(html,/Bairro \/ Localidade \/ Setor/);
+  assert.match(html,/"id":"RA_RESIDENCIAL","bloco":"Endereço","label":"Região administrativa \(quando aplicável\)"/);
+  assert.match(html,/place\("RA_RESIDENCIAL",ra\)/);
+  assert.match(html,/i\.maxLength=f\.id==="RA_RESIDENCIAL"\?120:2000/);
+  assert.doesNotMatch(html,/id="p-ra-slot" hidden|raAnterior|localUnico/);
+  assert.match(html,/montarCamposFichaUnica\(p\.camposFicha\|\|\{\}\);limparConsultaCepRede/);
+  assert.match(html,/bairro:v\("bairro"\)/);
+  assert.match(html,/camposFicha:lerCamposFichaUnica\(\)/);
+  assert.match(html,/campos=\{pais:d\.pais,uf:d\.uf,cidade:d\.municipio,bairro:d\.localidade,logradouro:d\.logradouro\}/);
+  assert.match(html,/consultarCepRede\(cep\)/);
+  assert.match(html,/id="p-cep-aplicar"/);
+ }
 });

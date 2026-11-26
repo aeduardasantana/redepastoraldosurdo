@@ -216,7 +216,7 @@ test("ficha ampliada nega acesso externo antes da leitura e limita consulta ao I
 });
 test("ficha ampliada disponibiliza seções de consulta e novo indicador",()=>{
  for(const id of ["familia","socioeconomico","historico"])assert.ok(navHtml.includes('data-ficha-aba="'+id+'"'));
- assert.match(navHtml,/Coordenações pastorais cadastradas/);assert.match(navHtml,/consultarComplementosFicha\(id,secao\)/);
+ assert.match(navHtml,/Coordenações Ativas/);assert.match(navHtml,/Coordenações Vacantes/);assert.match(navHtml,/Programações acessíveis em Libras/);assert.doesNotMatch(navHtml,/Coordenações pastorais cadastradas|Recorrentes\/confirmadas/);assert.match(navHtml,/Ambiente de homologação · v0\.15/);assert.match(navHtml,/consultarComplementosFicha\(id,secao\)/);
 });
 
  test("painel conta programações com dia e hora sem exigir confirmação; distingue locais e pastorais",()=>{const c=vm.createContext({});vm.runInContext(navHtml.split("// BEGIN_HOME_INDICATORS")[1].split("// END_HOME_INDICATORS")[0],c);const rows=[{id:"1",unidade:"P1",dia:"Domingo",horario:"10h",statusProgramacao:"CONFIRMADA"},{id:"2",unidade:"P1",dia:"Terça",horario:"14h",statusProgramacao:"RECORRENTE INFORMADA"},{id:"3",unidade:"P2",dia:"Domingo",horario:"9h",statusProgramacao:"DIVERGENTE"},{id:"4",unidade:"P3",dia:"",horario:"",statusProgramacao:"A CONFIRMAR"}];assert.equal(c.programacoesPainel(rows).length,3);assert.equal(c.locaisProgramacaoPainel(rows),2);assert.equal(c.locaisPastoraisPainel([{unidade:"CO"},{unidade:"D01",diocese:"D01"},{unidade:"P1",diocese:"D01"},{unidade:"P1",diocese:"D01"},{unidade:"P4",diocese:"D01"}]),2);});

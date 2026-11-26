@@ -187,7 +187,9 @@ function consultarResumoCadastro(){
  const ss=SpreadsheetApp.openById(cfg.operacionalId),r=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(x=>["CADASTRADO","PARCIAL"].includes(x[9]));
  const unidades=Object.create(null),links=vinculosPessoas_(ss);for(const x of r){const keys=[...new Set(links.filter(v=>v.pessoa===x[0]&&v.tipo==="Território").map(v=>v.destino))];for(const key of keys.length?keys:["SEM_VINCULO"])unidades[key]=(unidades[key]||0)+1;}
  const equipes=tabela_(ss,"COORDENACOES",COORD_HEADERS_).filter(x=>x[5]!=="ARQUIVADA");
- return {ok:true,total:r.length,parciais:r.filter(x=>x[9]==="PARCIAL").length,unidades:Object.entries(unidades).map(([id,total])=>({id,total})),equipes:equipes.length,rascunhos:equipes.filter(x=>x[5]==="RASCUNHO").length};
+ const equipesAtivas=new Set(equipes.filter(x=>x[5]!=="RASCUNHO").map(x=>x[0]));
+ const pessoasCoordenacao=new Set(lerComposicaoGestao_(ss).filter(x=>equipesAtivas.has(x[1])&&x[2]&&x[6]==="ATIVO"&&!x[9]).map(x=>x[2])).size;
+ return {ok:true,total:r.length,parciais:r.filter(x=>x[9]==="PARCIAL").length,unidades:Object.entries(unidades).map(([id,total])=>({id,total})),equipes:equipesAtivas.size,pessoasCoordenacao,rascunhos:equipes.filter(x=>x[5]==="RASCUNHO").length};
  }catch(e){return {ok:false,reason:"Indicadores de cadastro indisponíveis."};}
 }
 

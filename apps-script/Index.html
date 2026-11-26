@@ -230,10 +230,15 @@ G("eleicao-nivel").addEventListener("change",mostrarRegraEleitoral);mostrarRegra
 const PAGINAS=["agenda-pastoral","home","portal-agente","territorio","inclusao","gestao","cadastro-pessoas","contatos","grupos","alertas","eleicoes","acessos-gestao","documentos","pagina-publica","acesso"];
 function paginaValida(id){return PAGINAS.includes(id)?id:"home";}
 // END_PAGE_NAV
+// BEGIN_HOME_INDICATORS
+function programacoesPainel(rows){return rows.filter(x=>String(x.dia||"").trim()&&String(x.horario||"").trim());}
+function locaisProgramacaoPainel(rows){return new Set(programacoesPainel(rows).map(x=>x.unidade||[x.diocese,x.cidade,x.nome].map(v=>String(v||"").trim().toLowerCase()).join("|"))).size;}
+function locaisPastoraisPainel(rows){return new Set(rows.filter(x=>x.unidade&&x.unidade!=="CO"&&x.unidade!==x.diocese).map(x=>x.unidade)).size;}
+// END_HOME_INDICATORS
 function atualizarHome(){
  if(!territorial)return;const p=T("home-metrics");p.replaceChildren();
  const ids=new Set(territorial.dioceses.map(x=>x.id));
- const totals=[["Jurisdições",territorial.dioceses.length],["Unidades paroquiais",territorial.paroquias.length],["Comunidades",territorial.comunidades.length],["Locais com pastoral ativa",locaisPastoraisAtivas(territorial,ids,"","","").length],["Coordenações pastorais cadastradas",(territorial.pastorais||[]).length],["Programações cadastradas",territorial.missas.length],["Horários recorrentes / confirmados",filtrarAcessibilidade(territorial.missas,"fixo").length]];
+ const totals=[["Jurisdições",territorial.dioceses.length],["Unidades paroquiais",territorial.paroquias.length],["Comunidades",territorial.comunidades.length],["Locais com Pastoral do Surdo cadastrada",locaisPastoraisPainel(territorial.pastorais||[])],["Pastorais cadastradas",(territorial.pastorais||[]).length],["Locais com programação em Libras",locaisProgramacaoPainel(territorial.missas)],["Programações em Libras",programacoesPainel(territorial.missas).length]];
  for(const [label,value] of totals){const box=document.createElement("div");box.className="home-stat";add(box,"strong",String(value));add(box,"span",label);p.append(box);}
  T("home-status").textContent="Indicadores atualizados.";desenharTabelaTerritorial();
 }
@@ -261,16 +266,16 @@ T("home-refresh").addEventListener("click",()=>{if(!T("load-territorio").disable
 let resumoCadastro=null,resumoCarregando=false;
 function carregarResumoCadastro(){
  if(resumoCarregando)return;resumoCarregando=true;T("home-cadastro-status").textContent="Consultando registros…";
- google.script.run.withSuccessHandler(r=>{resumoCarregando=false;if(!r?.ok){T("home-cadastro-status").textContent=r?.reason||"Consulta indisponível.";return;}resumoCadastro=r;const box=T("home-cadastro-metrics");box.replaceChildren();for(const [label,n] of [["Pessoas cadastradas",r.total],["Sem vínculo informado",r.unidades.find(x=>x.id==="SEM_VINCULO")?.total||0],["Coordenações registradas",r.equipes],["Rascunhos de coordenação",r.rascunhos]]){const card=document.createElement("div");card.className="home-stat";add(card,"strong",String(n));add(card,"span",label);box.append(card);}T("home-cadastro-status").textContent="Dados da base operacional. Coordenações registradas não equivalem a mandatos ratificados.";desenharTabelaTerritorial();}).withFailureHandler(()=>{resumoCarregando=false;T("home-cadastro-status").textContent="Consulta de cadastro indisponível.";}).consultarResumoCadastro();
+ google.script.run.withSuccessHandler(r=>{resumoCarregando=false;if(!r?.ok){T("home-cadastro-status").textContent=r?.reason||"Consulta indisponível.";return;}resumoCadastro=r;const box=T("home-cadastro-metrics");box.replaceChildren();for(const [label,n] of [["Pessoas cadastradas",r.total],["Sem vínculo informado",r.unidades.find(x=>x.id==="SEM_VINCULO")?.total||0],["Equipes de coordenação cadastradas",r.equipes],["Pessoas na coordenação",r.pessoasCoordenacao??"—"],["Rascunhos de coordenação",r.rascunhos]]){const card=document.createElement("div");card.className="home-stat";add(card,"strong",String(n));add(card,"span",label);box.append(card);}T("home-cadastro-status").textContent="Dados da base operacional. Coordenações registradas não equivalem a mandatos ratificados.";desenharTabelaTerritorial();}).withFailureHandler(()=>{resumoCarregando=false;T("home-cadastro-status").textContent="Consulta de cadastro indisponível.";}).consultarResumoCadastro();
 }
 function desenharTabelaTerritorial(){
  if(!territorial)return;const select=T("home-diocese"),old=select.value;options(select,territorial.dioceses,"Todas as jurisdições",old);
  const el=T("home-territorial-table");el.replaceChildren();const table=document.createElement("table");table.style.cssText="width:100%;border-collapse:collapse;min-width:640px";const head=document.createElement("thead"),hr=document.createElement("tr");
- for(const t of ["Jurisdição","Paróquias cadastradas","Comunidades cadastradas","Locais com pastoral ativa","Programações em Libras","Recorrentes/confirmadas","Pessoas vinculadas"]){const th=add(hr,"th",t);th.scope="col";th.style.cssText="text-align:left;padding:10px;border-bottom:2px solid #b5c9bb";}head.append(hr);table.append(head);
+ for(const t of ["Jurisdição","Paróquias cadastradas","Comunidades cadastradas","Locais com Pastoral do Surdo cadastrada","Locais com programação em Libras","Programações em Libras","Pessoas vinculadas"]){const th=add(hr,"th",t);th.scope="col";th.style.cssText="text-align:left;padding:10px;border-bottom:2px solid #b5c9bb";}head.append(hr);table.append(head);
  const body=document.createElement("tbody");
  for(const d of territorial.dioceses.filter(x=>!select.value||x.id===select.value)){
  const ps=territorial.paroquias.filter(x=>x.diocese===d.id),cs=territorial.comunidades.filter(x=>x.diocese===d.id),ms=territorial.missas.filter(x=>x.diocese===d.id),ids=new Set([d.id,...ps.map(x=>x.id),...cs.map(x=>x.id),...(territorial.locais||[]).filter(x=>x.diocese===d.id).map(x=>x.id)]),pessoas=resumoCadastro?resumoCadastro.unidades.filter(x=>ids.has(x.id)).reduce((a,x)=>a+x.total,0):null;
- const row=document.createElement("tr");for(const v of [d.nome,ps.length,cs.length,locaisPastoraisAtivas(territorial,new Set([d.id]),d.id,"","").length,ms.length,filtrarAcessibilidade(ms,"fixo").length,pessoas===null?"—":pessoas]){const td=add(row,"td",String(v));td.style.cssText="padding:10px;border-bottom:1px solid #d4e0d8";}body.append(row);
+ const row=document.createElement("tr");for(const v of [d.nome,ps.length,cs.length,locaisPastoraisPainel((territorial.pastorais||[]).filter(x=>x.diocese===d.id)),locaisProgramacaoPainel(ms),programacoesPainel(ms).length,pessoas===null?"—":pessoas]){const td=add(row,"td",String(v));td.style.cssText="padding:10px;border-bottom:1px solid #d4e0d8";}body.append(row);
  }table.append(body);el.append(table);
 }
 T("home-diocese").addEventListener("change",desenharTabelaTerritorial);

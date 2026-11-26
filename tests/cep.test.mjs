@@ -90,8 +90,8 @@ test("Endereço diocesano: campos separados, atualização por ID e proteção d
  c.autorizacaoTerritorial_=()=>null;assert.equal(c.consultarEnderecoDiocesanoV015("D01").ok,false);assert.equal(c.salvarEnderecoDiocesanoV015({}).ok,false);
  for(const path of ["../apps-script/Index.html","../implantacao/Index-v0.15.html"]){
   const h=await readFile(new URL(path,import.meta.url),"utf8");
-  assert.match(h,/consultarEnderecoDiocesanoV015\(id\)/);
-  assert.match(h,/runner\.salvarEnderecoDiocesanoV015/);
+  assert.match(h,/er16Abrir\("dioceses",id\)/);
+  assert.match(h,/salvarEnderecoRedeV016\(/);
   assert.match(h,/hidden=!id\|\|tipo==="dioceses"/);
  }
 });
@@ -133,4 +133,25 @@ test("Endereço integrado: resolve unidade vinculada, local independente, sede C
 });
 test("Endereço integrado: catálogo e edição centralizada no pacote privado",async()=>{
  for(const path of ["../apps-script/Index.html","../implantacao/Index-v0.15.html"]){const h=await readFile(new URL(path,import.meta.url),"utf8");assert.match(h,/listarEnderecosRedeV016\(\)/);assert.match(h,/consultarEnderecoRedeV016\(tipo,id\)/);assert.match(h,/salvarEnderecoRedeV016\(/);assert.match(h,/sincronizarEspelhoEnderecoV016\(/);assert.match(h,/id="er16-confirm"/);assert.match(h,/T\("cad-t-"\+k\)\.readOnly=true/);assert.doesNotThrow(()=>new vm.Script(h.match(/<script>([\s\S]*?)<\/script>/)[1]));}
+});
+
+test("Endereço integrado: gravação mestre e espelho em operações separadas, recuperação idempotente",async()=>{
+ const c=vm.createContext({});for(const path of ["EnderecoDiocesano.gs","EnderecoRede.gs"])vm.runInContext(await readFile(new URL("../apps-script/"+path,import.meta.url),"utf8"),c);
+ const [dh,ph,ch,lh,oh,eh,ceh]=vm.runInContext("[END_DIO_V015_DIO_HEADERS_,ER16_PAR_,ER16_COM_,ER16_LOC_,ER16_ORG_,END_DIO_V015_HEADERS_,END_DIO_V015_CEP_HEADERS_]",c);
+ const p=Array(ph.length).fill("");Object.assign(p,{0:"P1",1:"D01",3:"Paróquia",4:"Paróquia",5:"Goiânia",6:"Centro",7:"Rua A, 10",8:"74013-020",29:"10",32:"ATIVO"});
+ const e=Array(24).fill("");Object.assign(e,{0:"P1",1:"Paróquia",2:"Paróquia",3:"Brasil",4:p[8],5:"Rua A",6:"10",8:"Centro",9:"Goiânia",10:"GO",12:"Rua A, 10",13:"PARÓQUIAS",14:"fonte",15:"L1",16:"A validar",19:"D01",20:"A consultar"});
+ const l=["L1","D01","Local","Paróquia","Goiânia","Rua A, 10","P1","62","fonte","validado","Goiânia","","Centro","GO"];
+ const rows={101:[dh,["D01","Arquidiocese","Goiânia","GO","","","Goiânia","","",""]],102:[ph,p],103:[ch],120:[lh,l],105:[oh,["ORG001","CNBB","Regional","Goiânia","GO"]],52032:[eh,e],52031:[ceh],52017:[lh,[...l]]};
+ const ids={DIOCESES:101,"PARÓQUIAS":102,COMUNIDADES:103,LOCAIS_REFERENCIA:120,"ORGANIZAÇÕES":105,ENDERECOS_INSTITUCIONAIS:52032,CEP_REFERENCIA:52031,LOCAIS_VINCULADOS:52017};
+ const tab=id=>({getSheetId:()=>id,getLastRow:()=>rows[id].length,getRange:(r,col,n,w)=>({getDisplayValues:()=>rows[id].slice(r-1,r-1+n).map(x=>x.slice(col-1,col-1+w)),getFormula:()=>""})});
+ c.autorizacaoTerritorial_=()=>({sourceId:"master"});c.gestaoConfigAutorizada_=()=>({operacionalId:"mirror"});c.SpreadsheetApp={openById:()=>({getSheetByName:k=>tab(ids[k])})};c.LockService={getScriptLock:()=>({tryLock:()=>true,hasLock:()=>true,releaseLock(){}})};c.Utilities={formatDate:()=>"2026-11-26"};c.ScriptApp={getOAuthToken:()=>"token"};
+ let failMirror=true,calls=[];c.UrlFetchApp={fetch:(url,opts)=>{const req=JSON.parse(opts.payload).requests;calls.push({url,req});if(url.includes("/mirror:")&&failMirror)return {getResponseCode:()=>503};for(const x of req){if(x.updateCells){const q=x.updateCells;rows[q.range.sheetId][q.range.startRowIndex][q.range.startColumnIndex]=q.rows[0].values[0].userEnteredValue.stringValue;}else if(x.appendCells){rows[x.appendCells.sheetId].push(x.appendCells.rows[0].values.map(v=>v.userEnteredValue.stringValue));}}return {getResponseCode:()=>200};}};
+ const f=c.consultarEnderecoRedeV016("locais","L1");assert.equal(f.ok,true);assert.equal(f.alvo,"P1");
+ const res=c.salvarEnderecoRedeV016({tipo:"locais",id:"L1",revisao:f.revisao,campos:{bairro:"Novo bairro",cep:"74013021"}});
+ assert.equal(res.ok,true);assert.equal(res.espelhoPendente,true);assert.equal(rows[102][1][6],"Novo bairro");assert.equal(rows[52032][1][8],"Novo bairro");assert.equal(rows[120][1][12],"Novo bairro");assert.equal(rows[52017][1][12],"Centro");assert.equal(rows[52031][1][0],"74013-021");
+ assert.equal(rows[52032][1][12],"Rua A, 10");assert.equal(rows[52032][1][14],"fonte");assert.equal(rows[120][1][6],"P1");
+ failMirror=false;assert.equal(c.sincronizarEspelhoEnderecoV016("locais","L1").ok,true);assert.equal(rows[52017][1][12],"Novo bairro");
+ const n=calls.length;assert.equal(c.sincronizarEspelhoEnderecoV016("locais","L1").atualizados,0);assert.equal(calls.length,n);
+ assert.equal(c.salvarEnderecoRedeV016({tipo:"locais",id:"L1",revisao:f.revisao,campos:{bairro:"Outro"}}).ok,false);
+ rows[52017][1][6]="P2";const fresh=c.consultarEnderecoRedeV016("locais","L1");assert.equal(c.salvarEnderecoRedeV016({tipo:"locais",id:"L1",revisao:fresh.revisao,campos:{bairro:"Outro"}}).ok,false);assert.equal(rows[52032][1][8],"Novo bairro");
 });

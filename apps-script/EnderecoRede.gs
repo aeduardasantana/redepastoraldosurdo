@@ -27,7 +27,7 @@ function er16Alvo_(b,tipo,id){
    if(Number(!!p)+Number(!!c)!==1||((p?p.r[1]:c.r[2])!==x.r[1]))throw Error("Vínculo local divergente.");
    const a=er16Alvo_(b,p?"paroquias":"comunidades",x.r[6]);return {...a,referencia:id,nomeReferencia:x.r[2]};
   }
-  alvo=id;diocese=x.r[1];nome=x.r[2];categoria=x.r[3];origem=get("enderecos",id)?.r[13]||"LOCAIS_REFERENCIA";ufFixa=get("dioceses",diocese)?.r[3]||"";
+  alvo=id;diocese=x.r[1];nome=x.r[2];categoria=x.r[3];origem=["CI-INOSEB-DF-001","CI-SMALDONE-GO-001"].includes(id)?"CONTATOS_INSTITUCIONAIS":"LOCAIS_REFERENCIA";ufFixa=get("dioceses",diocese)?.r[3]||"";
   if(!ufFixa||x.r[13]&&x.r[13]!==ufFixa)throw Error("UF territorial divergente.");
   seed={logradouro:x.r[5],cidade:x.r[10],regiaoAdministrativa:x.r[11],bairro:x.r[12],uf:x.r[13]||ufFixa};
  }else if(tipo==="dioceses"){
@@ -40,6 +40,8 @@ function er16Alvo_(b,tipo,id){
   if(!p){const matriz=get("paroquias",x.r[1]);if(!matriz||matriz.r[1]!==diocese||matriz.r[32]==="ARQUIVADO")throw Error("Unidade matriz divergente.");}
   alvo=id;nome=x.r[3];categoria=p?x.r[4]||"Paróquia":"Comunidade";origem=p?"PARÓQUIAS":"COMUNIDADES";ufFixa=d.r[3];proj={tipo,x,cols:p?{cidade:5,bairro:6,cep:8,numero:29,complemento:30}:{cidade:4,bairro:5,cep:7,numero:15,complemento:16},logradouro:p?7:6};
   seed=Object.fromEntries(Object.entries(proj.cols).map(([k,j])=>[k,x.r[j]]));seed.logradouro=x.r[proj.logradouro];seed.uf=ufFixa;
+ }else if(tipo==="organizacoes"&&["CI-INOSEB-DF-001","CI-SMALDONE-GO-001"].includes(id)){
+  return er16Alvo_(b,"locais",id);
  }else if(tipo==="organizacoes"){
   x=get(tipo,id);if(!x)throw Error("Organização inexistente.");
   alvo=id;nome=x.r[2];categoria=x.r[1];origem="ORGANIZAÇÕES";
@@ -63,6 +65,7 @@ function listarEnderecosRedeV016(){
    const id=r[0],alvo=tipo==="locais"?r[6]||id:id,nome=r[tipo==="dioceses"?1:tipo==="locais"||tipo==="organizacoes"?2:3],e=b.idx.enderecos.get(alvo);
    itens.push({tipo,id,nome,alvo,temEndereco:!!e,localidade:e?[e.r[9],e.r[23],e.r[10]].filter(Boolean).join(" · "):"",abrangencia:tipo==="organizacoes"?r[3]||"":""});
   }
+  for(const id of ["CI-INOSEB-DF-001","CI-SMALDONE-GO-001"]){const l=b.idx.locais.get(id),e=b.idx.enderecos.get(id);if(l&&e)itens.push({tipo:"organizacoes",id,nome:l.r[2],alvo:id,temEndereco:true,localidade:[e.r[9],e.r[23],e.r[10]].filter(Boolean).join(" · "),abrangencia:""});}
   return {ok:true,itens};
  }catch(e){return {ok:false,reason:e.message||"Catálogo indisponível."};}
 }

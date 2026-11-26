@@ -38,7 +38,7 @@ function consultarTerritorio(){
      lerTerritorio_(ss,"MISSAS LIBRAS",["ID referência","ID diocese (validar)","Cidade / região","Igreja / comunidade","Endereço público","Dia","Horário informado","Situação na fonte (não garantia atual)","Última referência","Fonte","Validação para visita","Tipo de celebração","ID unidade vinculada","Situação da programação","Pastoral do Surdo no local","Fonte da situação pastoral","Programação","Status cadastro","ID pastoral","Acessibilidade Libras","Data específica","Horário final","Publicar no portal"],23,5000).filter(r=>r[17]!=="ARQUIVADO"));
    data.locais=lerTerritorio_(ss,"LOCAIS_REFERENCIA",["ID_LOCAL","ID_DIOCESE","NOME","TIPO","CIDADE_RA","ENDERECO","ID_UNIDADE","DDD_REFERENCIA","FONTE","VALIDACAO","MUNICIPIO","REGIAO_ADMINISTRATIVA","BAIRRO_SETOR","UF"],14,5000).map(r=>({id:r[0],diocese:r[1],nome:r[2],tipo:r[3],cidade:r[10]||r[11]||"",municipio:r[10],regiaoAdministrativa:r[11],bairro:r[12],uf:r[13],logradouro:r[5],unidade:r[6],ddd:r[7],fonte:r[8],validacao:r[9]}));
    data.pastorais=lerTerritorio_(ss,"PASTORAIS",["ID pastoral","ID território","ID diocese","Nome da pastoral","Situação da pastoral","Início de atuação","Contato institucional","Histórico e validação","Fonte","Status cadastro"],10,5000).filter(r=>r[9]!=="ARQUIVADO").map(r=>({id:r[0],unidade:r[1],diocese:r[2],nome:r[3],situacaoPastoral:r[4],inicio:r[5],contato:r[6],historico:r[7],fonte:r[8]}));
-   return {ok:true,data};
+   return {ok:true,data:typeof prog16Normalizar_==="function"?prog16Normalizar_(data):data};
  }catch(e){return {ok:false,reason:"Não foi possível consultar o cadastro institucional. Verifique a fonte e a autorização."};}
 }
 

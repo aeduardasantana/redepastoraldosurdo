@@ -105,11 +105,67 @@ const CAMPOS_FICHA_TERRITORIAL={
  comunidades:[["Identificação e vínculo",["nome","Nome oficial"],["nomeDivulgacao","Nome de divulgação"],["paroquia","Paróquia matriz","paroquias"]],["Endereço",["cidade","Município / RA"],["bairro","Bairro / setor"],["logradouro","Logradouro e número"],["numero","Número"],["complemento","Complemento"],["cep","CEP"]],["Contatos",["telefone","Telefone"],["whatsapp","WhatsApp"],["email","E-mail"],["expediente","Horário de atendimento"]]],
  missas:[["Vínculo",["unidade","Unidade vinculada","unidades"],["diocese","Jurisdição","dioceses"],["nome","Nome do local (se ainda não vinculado)"],["cidade","Localidade"],["logradouro","Endereço de referência"]],["Programação",["programacao","Programação"],["tipo","Tipo de celebração"],["dia","Dia / frequência"],["horario","Horário"],["statusProgramacao","Situação","situacoes"]]]
 };
+// BEGIN_INSTITUTIONAL_CEP
+// A consulta é de apoio: apenas campos vazios são preenchidos. Endereço predial e vínculos não mudam.
+function planejarCepInstitucional(data,campos,ufEsperada){
+ if(!data||!data.uf||!data.municipio)return {erro:"Resposta postal incompleta.",preencher:[],divergencias:[]};
+ if(ufEsperada&&data.uf!==ufEsperada)return {erro:"UF postal diverge da jurisdição ou UF informada. Confira o CEP; nenhum campo foi alterado.",preencher:[],divergencias:[]};
+ const preencher=[],divergencias=[];
+ for(const [chave,valor] of Object.entries({cidade:data.municipio,bairro:data.localidade,logradouro:data.logradouro})){
+  if(!valor||!Object.prototype.hasOwnProperty.call(campos,chave))continue;
+  const anterior=String(campos[chave]||"").trim();
+  if(!anterior)preencher.push([chave,valor]);
+  else if(anterior!==valor)divergencias.push([chave,anterior,valor]);
+ }
+ return {erro:"",preencher,divergencias};
+}
+function instalarCepInstitucional(cep,container,form,campos,ufEsperada,ativo){
+ if(!cep||!container||!form)return;
+ cep.inputMode="numeric";cep.maxLength=9;cep.placeholder="00000-000";cep.pattern="[0-9]{5}-?[0-9]{3}";
+ const consultar=add(container,"button","Consultar CEP");consultar.type="button";consultar.className="secondary";
+ const status=add(container,"p","");status.className="muted";status.setAttribute("role","status");
+ const aplicar=add(container,"button","Preencher campos vazios");aplicar.type="button";aplicar.className="secondary";aplicar.hidden=true;
+ let seq=0,resultado=null;
+ const limpar=()=>{seq++;resultado=null;consultar.disabled=false;aplicar.hidden=true;status.textContent="";};
+ cep.addEventListener("input",limpar);form.addEventListener("reset",limpar);
+ const atual=(n,v)=>n===seq&&cep.isConnected&&ativo()&&cep.value.trim()===v;
+ const valores=()=>Object.fromEntries(Object.entries(campos).filter(([,el])=>el).map(([k,el])=>[k,el.value]));
+ const descrever=plan=>plan.divergencias.map(([k,old,v])=>({cidade:"Município / localidade",bairro:"Bairro",logradouro:"Endereço"}[k]+": cadastrado "+old+"; postal "+v)).join(" • ");
+ consultar.addEventListener("click",()=>{
+  limpar();const valor=cep.value.trim(),n=seq;
+  if(!/^\d{5}-?\d{3}$/.test(valor)){status.textContent="Informe um CEP com oito dígitos ou preencha manualmente.";return;}
+  consultar.disabled=true;status.textContent="Consultando CEP…";
+  google.script.run.withSuccessHandler(r=>{
+   if(!atual(n,valor))return;consultar.disabled=false;
+   if(!r?.ok||!r.data){status.textContent=r?.reason||"Consulta indisponível. Preencha manualmente.";return;}
+   const plan=planejarCepInstitucional(r.data,valores(),ufEsperada());
+   if(plan.erro){status.textContent=plan.erro;return;}
+   resultado={n,valor,data:r.data};
+   status.textContent=[r.data.logradouro,r.data.localidade,r.data.municipio,r.data.uf].filter(Boolean).join(" • ")+(r.cached?" — base de referência":" — ViaCEP")+(r.warning?" • "+r.warning:"")+(plan.divergencias.length?" • Divergências preservadas: "+descrever(plan):"")+(plan.preencher.length?" • Aplique apenas aos campos vazios.":" • Nenhum campo vazio a preencher; confira manualmente.");
+   aplicar.hidden=!plan.preencher.length;
+  }).withFailureHandler(()=>{if(atual(n,valor)){consultar.disabled=false;status.textContent="Consulta indisponível. Preencha manualmente.";}}).consultarCepRede(valor);
+ });
+ aplicar.addEventListener("click",()=>{
+  const r=resultado;if(!r||!atual(r.n,r.valor))return;
+  const plan=planejarCepInstitucional(r.data,valores(),ufEsperada());
+  if(plan.erro){status.textContent=plan.erro;aplicar.hidden=true;resultado=null;return;}
+  for(const [k,v] of plan.preencher)campos[k].value=v;
+  status.textContent="Campos vazios preenchidos. Confira antes de salvar."+(plan.divergencias.length?" Divergências preservadas: "+descrever(plan):"");
+  aplicar.hidden=true;resultado=null;
+ });
+}
+// END_INSTITUTIONAL_CEP
+
 let fichaTerritorialAtual=null;
 function abrirFormularioTerritorial(tipo,id,campos,revisao){
  fichaTerritorialAtual={tipo,id:id||"",revisao:revisao||""};const target=T("cad-territorial-campos");target.replaceChildren();T("cad-territorial-ficha").hidden=false;T("cad-territorial-excluir").hidden=!id;T("cad-territorial-status").textContent="";T("cad-territorial-titulo").textContent=(id?"Editar ":"Cadastrar ")+({paroquias:"unidade paroquial",comunidades:"comunidade",missas:"programação",pastorais:"pastoral"}[tipo]);
  const rotulo=x=>({...x,rotulo:[x.nome,x.cidade,x.bairro,x.diocese&&territorial.dioceses.find(d=>d.id===x.diocese)?.nome].filter(Boolean).join(" · ")});
  for(const [titulo,...fields] of CAMPOS_FICHA_TERRITORIAL[tipo]){add(target,"h4",titulo);const group=document.createElement("div");group.className="filters";for(const [key,label,list] of fields){const field=document.createElement("div");field.className="field";const lab=add(field,"label",label);lab.htmlFor="cad-t-"+key;const input=document.createElement(list?"select":"input");input.id="cad-t-"+key;input.name=key;field.append(input);const val=campos[key]||"";if(list){const rows=list==="situacoesPastorais"?["Ativa","Inativa","Constituída","Em implantação","Não informada"].map(v=>({id:v,nome:v})):list==="territoriosPastorais"?[{id:"CO",nome:"Regional Centro-Oeste"},...territorial.dioceses,...territorial.paroquias,...territorial.comunidades,...(territorial.locais||[]).filter(x=>!x.unidade)].map(rotulo):list==="situacoes"?[{id:"CONFIRMADA",nome:"Confirmada"},{id:"RECORRENTE INFORMADA",nome:"Informada"},{id:"A CONFIRMAR",nome:"A confirmar"},{id:"DIVERGENTE",nome:"Divergente"}]:list==="unidades"?[...territorial.paroquias,...territorial.comunidades].map(rotulo):territorial[list].map(rotulo);options(input,rows,"Selecionar",val);if(val&&input.value!==val){const op=add(input,"option","Referência existente: "+val);op.value=val;input.value=val;}}else {input.type="text";input.maxLength=1000;input.value=val;}group.append(field);}target.append(group);}
+ if(["paroquias","comunidades"].includes(tipo)){
+  const ficha=fichaTerritorialAtual,cep=T("cad-t-cep"),form=T("cad-territorial-form");
+  const uf=()=>{const diocese=tipo==="paroquias"?T("cad-t-diocese").value:territorial.paroquias.find(p=>p.id===T("cad-t-paroquia").value)?.diocese;return territorial.dioceses.find(d=>d.id===diocese)?.uf||"";};
+  instalarCepInstitucional(cep,cep.parentElement,form,{cidade:T("cad-t-cidade"),bairro:T("cad-t-bairro"),logradouro:T("cad-t-logradouro")},uf,()=>fichaTerritorialAtual===ficha&&!T("cad-territorial-ficha").hidden);
+ }
  T("cad-territorial-ficha").scrollIntoView({block:"start"});
 }
 function abrirFichaTerritorial(tipo,id){
@@ -163,6 +219,7 @@ for(const k of ["provincia","jurisdicao","paroquia","comunidade","categoria"])T(
 T("limpar").addEventListener("click",()=>{for(const k of ["provincia","jurisdicao","paroquia","comunidade","busca"])T(k).value="";T("filtro-libras").value="todos";T("categoria").value="dioceses";updateTerritorio();});
 T("new-request").addEventListener("click",()=>{T("unit-form").hidden=false;T("request-status").textContent="";T("new-type").value=T("paroquia").value?"COMUNIDADE":"PAROQUIA";refreshParents();T("new-name").focus();});
 T("new-type").addEventListener("change",refreshParents);T("cancel-request").addEventListener("click",()=>{T("unit-form").hidden=true;T("unit-form").reset();});
+instalarCepInstitucional(T("new-cep"),T("new-cep").parentElement,T("unit-form"),{cidade:T("new-city"),bairro:T("new-neighborhood"),logradouro:T("new-address")},()=>T("new-uf").value,()=>!T("unit-form").hidden);
 T("unit-form").addEventListener("submit",e=>{e.preventDefault();const b=T("send-request");b.disabled=true;T("request-status").textContent="Registrando solicitação…";const input={tipo:T("new-type").value,superior:T("new-parent").value,nome:T("new-name").value,cidade:T("new-city").value,uf:T("new-uf").value,bairro:T("new-neighborhood").value,endereco:T("new-address").value,cep:T("new-cep").value,fonte:"Cadastro administrativo"};google.script.run.withSuccessHandler(r=>{b.disabled=false;if(!r?.ok){T("request-status").textContent=r?.reason||"Não foi possível registrar.";return;}T("request-status").textContent="Solicitação registrada para revisão: "+r.id;T("unit-form").reset();T("unit-form").hidden=true;}).withFailureHandler(()=>{b.disabled=false;T("request-status").textContent="Registro indisponível. Tente novamente."}).solicitarUnidade(input);});
 
 let gestao=null;

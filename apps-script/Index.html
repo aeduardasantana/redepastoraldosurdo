@@ -242,16 +242,17 @@ function indicadoresCoordenacaoPainel(data,resumo,diocese=""){
  const porLocal=new Map();for(const e of equipes){const id=canon(e.unidade);if(!porLocal.has(id))porLocal.set(id,new Set());porLocal.get(id).add(e.situacao);}
  const prog=programacoesPainel(data.missas.filter(m=>!diocese||m.diocese===diocese));
  const locais=new Set(prog.map(m=>{const raw=m.unidade||m.unidadeInformada||"";const valid=unidades.some(u=>u.id===raw&&u.diocese===m.diocese)||locs.some(l=>l.id===raw&&l.diocese===m.diocese);return valid?canon(raw):"SEM_ID:"+[m.diocese,m.cidade,m.nome].map(v=>String(v||"").trim().toLowerCase()).join("|");}));
- let sem=0,indefinidas=0;for(const id of locais){if(id.startsWith("SEM_ID:")){indefinidas++;continue;}const sit=porLocal.get(id);if(!sit)sem++;else if(!sit.has("ATIVA")&&!sit.has("VACANTE"))indefinidas++;}
- return {ativas:escopo.filter(e=>e.situacao==="ATIVA").length,vacantes:escopo.filter(e=>e.situacao==="VACANTE").length,sem,indefinidas};
+ const vacantes=new Set(escopo.filter(e=>e.situacao==="VACANTE"&&!porLocal.get(canon(e.unidade))?.has("ATIVA")).map(e=>canon(e.unidade)));
+ let sem=0,indefinidas=0;for(const id of locais){if(id.startsWith("SEM_ID:")){indefinidas++;continue;}const sit=porLocal.get(id);if(!sit){sem++;vacantes.add(id);}else if(!sit.has("ATIVA")&&!sit.has("VACANTE"))indefinidas++;}
+ return {ativas:escopo.filter(e=>e.situacao==="ATIVA").length,vacantes:vacantes.size,sem,indefinidas};
 }
 // END_HOME_INDICATORS
 function atualizarHome(){
  if(!territorial)return;const p=T("home-metrics");p.replaceChildren();
  const ind=indicadoresCoordenacaoPainel(territorial,resumoCadastro);
- const totals=[["Jurisdições",territorial.dioceses.length],["Unidades paroquiais",territorial.paroquias.length],["Comunidades",territorial.comunidades.length],["Programação acessível em Libras",programacoesPainel(territorial.missas).length],["Coordenações ativas",ind.ativas],["Locais com programação sem coordenação cadastrada",ind.sem],["Coordenações vacantes",ind.vacantes]];
+ const totals=[["Jurisdições",territorial.dioceses.length],["Unidades paroquiais",territorial.paroquias.length],["Comunidades",territorial.comunidades.length],["Programações acessíveis em Libras",programacoesPainel(territorial.missas).length],["Coordenações ativas",ind.ativas],["Coordenações Vacantes",ind.vacantes]];
  for(const [label,value] of totals){const box=document.createElement("div");box.className="home-stat";add(box,"strong",String(value));add(box,"span",label);p.append(box);}
- T("home-status").textContent="Programação: dia e horário informados. Coordenação: composição ativa registrada. Vacância: situação expressamente cadastrada. "+(typeof ind.indefinidas==="number"&&ind.indefinidas>0?ind.indefinidas+" local(is) com situação de coordenação indeterminada.":"");desenharTabelaTerritorial();
+ T("home-status").textContent="Programação: dia e horário informados. Coordenação: composição ativa registrada. Vacância: local com programação sem coordenação cadastrada ou vacância expressamente registrada, sem duplicidade. "+(typeof ind.indefinidas==="number"&&ind.indefinidas>0?ind.indefinidas+" local(is) com situação de coordenação indeterminada.":"");desenharTabelaTerritorial();
 }
 
 let documentosRegionais=[];
@@ -282,11 +283,11 @@ function carregarResumoCadastro(){
 function desenharTabelaTerritorial(){
  if(!territorial)return;const select=T("home-diocese"),old=select.value;options(select,territorial.dioceses,"Todas as jurisdições",old);
  const el=T("home-territorial-table");el.replaceChildren();const table=document.createElement("table");table.style.cssText="width:100%;border-collapse:collapse;min-width:640px";const head=document.createElement("thead"),hr=document.createElement("tr");
- for(const t of ["Jurisdição","Paróquias cadastradas","Comunidades cadastradas","Programação acessível em Libras","Coordenações ativas","Locais com programação sem coordenação cadastrada","Coordenações vacantes","Pessoas vinculadas"]){const th=add(hr,"th",t);th.scope="col";th.style.cssText="text-align:left;padding:10px;border-bottom:2px solid #b5c9bb";}head.append(hr);table.append(head);
+ for(const t of ["Jurisdição","Paróquias cadastradas","Comunidades cadastradas","Programações acessíveis em Libras","Coordenações ativas","Coordenações Vacantes","Pessoas vinculadas"]){const th=add(hr,"th",t);th.scope="col";th.style.cssText="text-align:left;padding:10px;border-bottom:2px solid #b5c9bb";}head.append(hr);table.append(head);
  const body=document.createElement("tbody");
  for(const d of territorial.dioceses.filter(x=>!select.value||x.id===select.value)){
  const ps=territorial.paroquias.filter(x=>x.diocese===d.id),cs=territorial.comunidades.filter(x=>x.diocese===d.id),ms=territorial.missas.filter(x=>x.diocese===d.id),ids=new Set([d.id,...ps.map(x=>x.id),...cs.map(x=>x.id),...(territorial.locais||[]).filter(x=>x.diocese===d.id).map(x=>x.id)]),pessoas=resumoCadastro?resumoCadastro.unidades.filter(x=>ids.has(x.id)).reduce((a,x)=>a+x.total,0):null;
- const ind=indicadoresCoordenacaoPainel(territorial,resumoCadastro,d.id);const row=document.createElement("tr");for(const v of [d.nome,ps.length,cs.length,programacoesPainel(ms).length,ind.ativas,ind.sem,ind.vacantes,pessoas===null?"—":pessoas]){const td=add(row,"td",String(v));td.style.cssText="padding:10px;border-bottom:1px solid #d4e0d8";}body.append(row);
+ const ind=indicadoresCoordenacaoPainel(territorial,resumoCadastro,d.id);const row=document.createElement("tr");for(const v of [d.nome,ps.length,cs.length,programacoesPainel(ms).length,ind.ativas,ind.vacantes,pessoas===null?"—":pessoas]){const td=add(row,"td",String(v));td.style.cssText="padding:10px;border-bottom:1px solid #d4e0d8";}body.append(row);
  }table.append(body);el.append(table);
 }
 T("home-diocese").addEventListener("change",desenharTabelaTerritorial);

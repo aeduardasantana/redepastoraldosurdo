@@ -34,7 +34,7 @@ function riValidar_(v,entidades,existente){
  const clean=(k,max,req=false)=>{const s=String(v[k]??"").trim();if((req&&!s)||s.length>max||/[\u0000-\u001f\u007f<>]/.test(s)||/^[=+@]/.test(s))throw Error("Campo inválido: "+k);return s;};
  const origem=entidades.get(clean("origem",100,true)),destino=entidades.get(clean("destino",100,true));
  if(!origem||!destino||origem.id===destino.id)throw Error("Selecione duas entidades distintas e válidas.");
- const tipo=clean("tipo",80,true),status=clean("status",80,true),inicio=clean("inicio",100),fim=clean("fim",100),data=clean("dataReferencia",10),fonte=clean("fonte",1000),obs=clean("observacao",3000);
+ const tipo=clean("tipo",80,true),status=clean("status",80,true),inicio=clean("inicio",100),fim=clean("fim",100),data=clean("dataReferencia",10),fonte=clean("fonte",1000),obs=clean("observacao",45000);
  if(!RI_TIPOS_.includes(tipo)||!RI_STATUS_.includes(status))throw Error("Tipo ou situação inválida.");
  if(existente&&(existente[1]!==origem.id||existente[4]!==destino.id||existente[3]!==tipo))throw Error("Origem, destino e tipo são imutáveis. Arquive a relação incorreta e crie outra.");
  if(existente&&existente[10]==="ARQUIVADO")throw Error("Relação arquivada não pode ser alterada.");
@@ -57,12 +57,13 @@ function salvarRelacaoInstitucional(input){
   const b=riContexto_(cfg),id=String(input?.id||""),x=id?b.idx.get(id):null;
   if(id&&(!x||input.revisao!==riRevision_(x.r)))throw Error("Cadastro alterado ou inexistente. Atualize antes de editar.");
   const row=riValidar_(input,b.entidades,x?.r);
-  if(!x&&[...b.idx.values()].some(y=>y.r[10]!=="ARQUIVADO"&&y.r[10]!=="ENCERRADO"&&y.r[1]===row[1]&&y.r[3]===row[3]&&y.r[4]===row[4]))throw Error("Já existe uma relação não encerrada com esses identificadores.");
+  if(!["ARQUIVADO","ENCERRADO"].includes(row[10])&&[...b.idx.values()].some(y=>y.r[0]!==row[0]&&y.r[10]!=="ARQUIVADO"&&y.r[10]!=="ENCERRADO"&&y.r[1]===row[1]&&y.r[3]===row[3]&&y.r[4]===row[4]))throw Error("Já existe uma relação não encerrada com esses identificadores.");
   if(!x){let n=0;for(const k of b.idx.keys()){const m=/^REL-INST-(\d+)$/.exec(k);if(m)n=Math.max(n,Number(m[1]));}row[0]="REL-INST-"+String(n+1).padStart(4,"0");}
   if(x&&riRevision_(row)===riRevision_(x.r))return {ok:true,id:row[0],alterado:false};
   if(x){
-   const anterior=JSON.stringify(x.r.slice(8,14));
-   const nota="Revisão "+Utilities.formatDate(new Date(),"America/Sao_Paulo","yyyy-MM-dd HH:mm:ss")+"; valores anteriores (início, fim, status, data, fonte, observação): "+anterior;
+   const anterior=JSON.stringify(x.r.slice(8,13));
+   const obsAnterior=x.r[13]&&!row[13].includes(x.r[13])?" | Observação anterior: "+x.r[13]:"";
+   const nota="Revisão "+Utilities.formatDate(new Date(),"America/Sao_Paulo","yyyy-MM-dd HH:mm:ss")+"; valores anteriores (início, fim, status, data, fonte): "+anterior+obsAnterior;
    row[13]=[row[13],nota].filter(Boolean).join(" | ");
    if(row[13].length>45000)throw Error("Histórico excede o limite.");
   }

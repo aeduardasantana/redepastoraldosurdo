@@ -1,0 +1,14 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import vm from "node:vm";
+import fs from "node:fs";
+const source=fs.readFileSync(new URL("../apps-script/Agenda.gs",import.meta.url),"utf8");
+const ctx=vm.createContext({});vm.runInContext(source,ctx);
+const v={titulo:"Encontro",unidade:"CO",categoria:"ENCONTRO",acessibilidade:"A_CONFIRMAR",situacao:"PLANEJAMENTO",inicio:"2027-10-15",fim:"2027-10-17",diaInteiro:true,local:"Goianésia",descricao:""};
+const units=[{id:"CO"}];
+test("período integral usa fim exclusivo e evento privado",()=>{const x=ctx.agendaValidar_(v,units);assert.equal(x.end.date,"2027-10-18");assert.equal(x.visibility,"private");assert.equal(x.extendedProperties.private.publicacao,"NAO_PUBLICAR");});
+test("nega território inválido, HTML e datas inválidas",()=>{for(const p of [{unidade:"D99"},{titulo:"<script>"},{inicio:"2027-02-30"},{situacao:"PÚBLICO"}])assert.throws(()=>ctx.agendaValidar_({...v,...p},units));});
+test("valida horários e preserva fuso",()=>{const a={...v,diaInteiro:false,fim:v.inicio,horaInicio:"08:00",horaFim:"09:00"};assert.equal(ctx.agendaValidar_(a,units).start.dateTime,"2027-10-15T08:00:00-03:00");assert.throws(()=>ctx.agendaValidar_({...a,horaFim:"07:00"},units));});
+test("consulta falha fechada sem identidade",()=>{ctx.autorizacaoTerritorial_=()=>null;assert.equal(ctx.consultarAgendaPastoral("2027-01-01","2027-01-31").ok,false);assert.equal(ctx.salvarAgendaPastoral(v).ok,false);});
+test("referência externa não inclui descrição nem metadados privados",()=>{const e=ctx.agendaMapear_({id:"a",summary:"Reunião",description:"privado",start:{date:"2027-01-01"},end:{date:"2027-01-02"},extendedProperties:{private:{unidade:"D01"}}});assert.equal(e.gerenciado,false);assert.equal(e.descricao,"");assert.equal(e.unidade,"");});
+test("interface contém módulo e chamadas",()=>{const h=fs.readFileSync(new URL("../apps-script/Index.html",import.meta.url),"utf8");for(const s of ['data-page="agenda-pastoral"','id="agenda-pastoral"','consultarAgendaPastoral(','salvarAgendaPastoral('])assert.ok(h.includes(s));});

@@ -127,13 +127,14 @@ function instalarCepInstitucional(cep,container,form,campos,ufEsperada,ativo){
  const aplicar=add(container,"button","Preencher campos vazios");aplicar.type="button";aplicar.className="secondary";aplicar.hidden=true;
  let seq=0,resultado=null;
  const limpar=()=>{seq++;resultado=null;consultar.disabled=false;aplicar.hidden=true;status.textContent="";};
- cep.addEventListener("input",limpar);form.addEventListener("reset",limpar);
+ cep.addEventListener("input",limpar);if(form.id==="unit-form"){form.addEventListener("reset",limpar);T("new-request").addEventListener("click",limpar);T("load-territorio").addEventListener("click",limpar);}
  const atual=(n,v)=>n===seq&&cep.isConnected&&ativo()&&cep.value.trim()===v;
  const valores=()=>Object.fromEntries(Object.entries(campos).filter(([,el])=>el).map(([k,el])=>[k,el.value]));
  const descrever=plan=>plan.divergencias.map(([k,old,v])=>({cidade:"Município / localidade",bairro:"Bairro",logradouro:"Endereço"}[k]+": cadastrado "+old+"; postal "+v)).join(" • ");
  consultar.addEventListener("click",()=>{
   limpar();const valor=cep.value.trim(),n=seq;
   if(!/^\d{5}-?\d{3}$/.test(valor)){status.textContent="Informe um CEP com oito dígitos ou preencha manualmente.";return;}
+  if(!ufEsperada()){status.textContent="Selecione a jurisdição, unidade superior ou UF antes da consulta.";return;}
   consultar.disabled=true;status.textContent="Consultando CEP…";
   google.script.run.withSuccessHandler(r=>{
    if(!atual(n,valor))return;consultar.disabled=false;
@@ -147,6 +148,7 @@ function instalarCepInstitucional(cep,container,form,campos,ufEsperada,ativo){
  });
  aplicar.addEventListener("click",()=>{
   const r=resultado;if(!r||!atual(r.n,r.valor))return;
+  if(!ufEsperada()){status.textContent="Selecione a jurisdição, unidade superior ou UF antes de aplicar.";aplicar.hidden=true;resultado=null;return;}
   const plan=planejarCepInstitucional(r.data,valores(),ufEsperada());
   if(plan.erro){status.textContent=plan.erro;aplicar.hidden=true;resultado=null;return;}
   for(const [k,v] of plan.preencher)campos[k].value=v;

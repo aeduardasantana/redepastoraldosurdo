@@ -181,15 +181,24 @@ function salvarCadastroBasico(input){
  return {ok:true,id,status};
  }catch(e){return {ok:false,reason:"Não foi possível confirmar a gravação. Confira a planilha antes de tentar novamente."};}finally{if(lock&&lock.hasLock())lock.releaseLock();}
 }
+function resumoCoordenacoesAtivas_(equipes,comp,hoje){
+ const dt=s=>!s||/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s+"T00:00:00Z"))&&new Date(s+"T00:00:00Z").toISOString().slice(0,10)===s;
+ const pessoas=new Set(),coordenacoesTerritoriais=[];
+ for(const e of equipes){if(!e[0]||!e[1]||e[5]==="ARQUIVADA")continue;
+ const membros=comp.filter(c=>c[1]===e[0]&&c[2]&&c[6]==="ATIVO"&&!c[9]&&dt(c[4])&&dt(c[5])&&(!c[4]||c[4]<=hoje)&&(!c[5]||c[5]>=hoje));
+ const situacao=e[5]==="VACANTE"?(membros.length?"INDEFINIDA":"VACANTE"):["DOCUMENTADA","INFORMADA","ATIVA","RATIFICADA"].includes(e[5])&&membros.length?"ATIVA":"INDEFINIDA";
+ if(situacao==="ATIVA")for(const m of membros)pessoas.add(m[2]);
+ coordenacoesTerritoriais.push({unidade:e[1],situacao});
+ }return {coordenacoesTerritoriais,pessoasCoordenacao:pessoas.size,equipes:coordenacoesTerritoriais.filter(e=>e.situacao==="ATIVA").length};
+}
 function consultarResumoCadastro(){
  try{
  const cfg=gestaoConfigAutorizada_();if(!cfg)return {ok:false,reason:"Acesso negado."};
  const ss=SpreadsheetApp.openById(cfg.operacionalId),r=tabela_(ss,"PESSOAS",PESSOAS_HEADERS_).filter(x=>["CADASTRADO","PARCIAL"].includes(x[9]));
  const unidades=Object.create(null),links=vinculosPessoas_(ss);for(const x of r){const keys=[...new Set(links.filter(v=>v.pessoa===x[0]&&v.tipo==="Território").map(v=>v.destino))];for(const key of keys.length?keys:["SEM_VINCULO"])unidades[key]=(unidades[key]||0)+1;}
  const equipes=tabela_(ss,"COORDENACOES",COORD_HEADERS_).filter(x=>x[5]!=="ARQUIVADA");
- const equipesAtivas=new Set(equipes.filter(x=>x[5]!=="RASCUNHO").map(x=>x[0]));
- const pessoasCoordenacao=new Set(lerComposicaoGestao_(ss).filter(x=>equipesAtivas.has(x[1])&&x[2]&&x[6]==="ATIVO"&&!x[9]).map(x=>x[2])).size;
- return {ok:true,total:r.length,parciais:r.filter(x=>x[9]==="PARCIAL").length,unidades:Object.entries(unidades).map(([id,total])=>({id,total})),equipes:equipesAtivas.size,pessoasCoordenacao,rascunhos:equipes.filter(x=>x[5]==="RASCUNHO").length};
+ const resumo=resumoCoordenacoesAtivas_(equipes,lerComposicaoGestao_(ss),Utilities.formatDate(new Date(),"America/Sao_Paulo","yyyy-MM-dd"));
+ return {ok:true,total:r.length,parciais:r.filter(x=>x[9]==="PARCIAL").length,unidades:Object.entries(unidades).map(([id,total])=>({id,total})),...resumo,rascunhos:equipes.filter(x=>x[5]==="RASCUNHO").length};
  }catch(e){return {ok:false,reason:"Indicadores de cadastro indisponíveis."};}
 }
 

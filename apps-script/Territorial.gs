@@ -9,7 +9,7 @@ function mapTerritorio_(d,p,c,m){
  distinct(d);distinct(p);distinct(c);distinct(m);
  const did=new Set(dioceses.map(x=>x.id));const pmap=new Map(paroq.map(x=>[x.id,x]));
  if(paroq.some(x=>!did.has(x.diocese))||comunidades.some(x=>!pmap.has(x.paroquia)||pmap.get(x.paroquia).diocese!==x.diocese))throw new Error("Vínculo territorial inconsistente.");
- return {dioceses,paroquias:paroq,comunidades,missas:missas.map(x=>({...x,diocese:did.has(x.diocese)?x.diocese:"",vinculoPendente:!did.has(x.diocese),unidade:(pmap.get(x.unidade)?.diocese===x.diocese||comunidades.some(c=>c.id===x.unidade&&c.diocese===x.diocese))?x.unidade:""}))};
+ return {dioceses,paroquias:paroq,comunidades,missas:missas.map(x=>({...x,unidadeInformada:x.unidade,diocese:did.has(x.diocese)?x.diocese:"",vinculoPendente:!did.has(x.diocese),unidade:(pmap.get(x.unidade)?.diocese===x.diocese||comunidades.some(c=>c.id===x.unidade&&c.diocese===x.diocese))?x.unidade:""}))};
 }
 
 function lerTerritorio_(ss,nome,cabecalho,largura,max){

@@ -25,14 +25,16 @@ class Audit(HTMLParser):
         if tag=="h1": self.h1+=1
         if tag=="a" and a.get("href","").startswith("#"): self.anchors.append(a["href"][1:])
         if tag=="img": self.images.append(a)
-        if tag=="script": self.scripts.append(a.get("src"))
+        if tag=="script": self.scripts.append(a.get("src") or ("inline:"+a.get("id","")))
 def audit():
     a=Audit()
     a.feed(CONTENT.decode("utf-8"))
     assert a.lang=="pt-BR" and a.h1==1
     assert all(x in a.ids for x in a.anchors)
     assert a.images and all(x.get("alt") for x in a.images)
-    assert a.scripts==["https://vlibras.gov.br/app/vlibras-plugin.js"]
+    assert a.scripts==["inline:celebration-search-local","https://vlibras.gov.br/app/vlibras-plugin.js"]
+    assert {"busca-celebracoes","celebracao-query","celebracao-dia","celebracao-hora","celebracao-diocese","celebracao-tipo","celebracao-status","celebracao-limpar","missao"}.issubset(a.ids)
+    assert b"fetch(" not in CONTENT and b"XMLHttpRequest" not in CONTENT
     assert b"data-portal-release=" in CONTENT and b"GEB Tecnologia" in CONTENT
     assert b"script.google.com/macros/s/" in CONTENT and b"pastoraldosurdocentro.blogspot.com" in CONTENT
     assert b"docs.google.com/spreadsheets" not in CONTENT and b"google.script.run" not in CONTENT
